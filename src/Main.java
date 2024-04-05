@@ -1,9 +1,9 @@
 import java.io.*;
 import java.util.*;
 
-public class Readme {
+public class Main {
     public static void main(String[] args) throws FileNotFoundException {
-        String fileName = "D:\\University\\Year 2 Semester 2\\AI Methods\\Java Coursework\\src\\BPP.txt";
+        String fileName = "src/BPP.txt";
         File file = new File(fileName);
         Scanner scanner = new Scanner(file);
 
