@@ -12,6 +12,11 @@ public class Bin {
         items.add(item);
     }
 
+    // Method to check if nthe bin is empty
+    public boolean isEmpty() {
+        return items.isEmpty();
+    }
+
     public int getCurrentSize() {
         return items.stream().mapToInt(i -> i.size).sum();
     }

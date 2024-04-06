@@ -5,41 +5,51 @@ import java.util.stream.Collectors;
 
 public class BinPackingGA {
     private static final int POPULATION_SIZE = 100;
-    private static final int GENERATIONS = 400;
+    private static final int GENERATIONS = 800;
     private static final Random random = new Random();
     private static final int BIN_CAPACITY = 10000;
     private static final int FAMILY_SIZE = 5;
     private static final int OFFSPRING_SIZE = 20;
+
     private static List<Individual> generateInitialPopulation(List<Item> items, int binCapacity, int populationSize) {
-        long startTime = System.currentTimeMillis();
-        System.out.println("Generating initial population...");
+        System.out.println("Generating initial population with BFD...");
 
         List<Individual> population = new ArrayList<>();
-        Collections.sort(items, (item1, item2) -> item2.size - item1.size); // Sort items in decreasing order of size
+
+        // Sort items by size in decreasing order
+        Collections.sort(items, (item1, item2) -> Integer.compare(item2.size, item1.size));
 
         for (int i = 0; i < populationSize; i++) {
             List<Bin> bins = new ArrayList<>();
-            Bin currentBin = new Bin(); // Create the first bin
-
             for (Item item : items) {
-                if (currentBin.canAddItem(item, binCapacity)) {
-                    currentBin.addItem(item); // Add the item to the current bin if there's space
+                Bin bestFitBin = null;
+                int minSpaceLeft = Integer.MAX_VALUE;
+
+                // Find the bin that fits the item best
+                for (Bin bin : bins) {
+                    int spaceLeft = binCapacity - bin.getCurrentSize();
+                    if (spaceLeft >= item.size && spaceLeft < minSpaceLeft) {
+                        bestFitBin = bin;
+                        minSpaceLeft = spaceLeft;
+                    }
+                }
+
+                if (bestFitBin != null) {
+                    // Place the item in the best-fit bin
+                    bestFitBin.addItem(item);
                 } else {
-                    // If the item cannot fit in the current bin, move to the next bin
-                    bins.add(currentBin);
-                    currentBin = new Bin();
-                    currentBin.addItem(item);
+                    // Create a new bin for the item
+                    Bin newBin = new Bin();
+                    newBin.addItem(item);
+                    bins.add(newBin);
                 }
             }
-            // Add the last bin to the list of bins
-            bins.add(currentBin);
             population.add(new Individual(bins));
         }
-        long endTime = System.currentTimeMillis();
-        System.out.println("Initial population generated in " + (endTime - startTime) + " ms");
+
+        System.out.println("Initial population generated with BFD");
         return population;
     }
-
 
 
     private static Map<String, List<Item>> loadItems(String fileName) throws FileNotFoundException {
@@ -68,22 +78,30 @@ public class BinPackingGA {
         return testCases;
     }
 
-    private static void applyMGG(List<Individual> population, int familySize, int offspringSize) {
-        Random random = new Random();
-
-        // Step 1: Select a small group (family) from the population
-        List<Individual> family = random.ints(familySize, 0, population.size())
-                .mapToObj(population::get)
-                .collect(Collectors.toList());
+    private static void applyMGG(List<Individual> population, int offspringSize) {
+        // Step 1: Select two parents
+        Individual parent1 = population.get(random.nextInt(population.size()));
+        Individual parent2 = population.get(random.nextInt(population.size()));
 
         // Step 2: Generate offspring
-        List<Individual> offspring = generateOffspring(family, offspringSize);
+        List<Individual> offspring = generateOffspring(Arrays.asList(parent1, parent2), offspringSize);
 
-        // Step 3: Replace the worst individuals in the population with the best offspring
-        population.addAll(offspring);
-        population.sort(Comparator.comparing(Individual::getFitness));
-        for (int i = 0; i < offspringSize; i++) {
-            population.remove(population.size() - 1); // Remove worst individuals
+        // Evaluate and select for replacement
+        List<Individual> candidates = new ArrayList<>(offspring);
+        candidates.add(parent1);
+        candidates.add(parent2);
+
+        // Sort based on fitness
+        candidates.sort(Comparator.comparing(Individual::getFitness));
+
+        // Step 3: Replace two worst individuals in the population with the best two offspring
+        replaceWorstIndividuals(population, candidates.subList(0, 2));
+    }
+
+    private static void replaceWorstIndividuals(List<Individual> population, List<Individual> newIndividuals) {
+        population.sort(Comparator.comparing(Individual::getFitness).reversed());
+        for (int i = 0; i < newIndividuals.size(); i++) {
+            population.set(population.size() - 1 - i, newIndividuals.get(i));
         }
     }
 
@@ -114,7 +132,7 @@ public class BinPackingGA {
             List<Individual> population = generateInitialPopulation(items, BIN_CAPACITY, POPULATION_SIZE);
             System.out.println("Initial population generated");
             for (int i = 0; i < GENERATIONS; i++) {
-                applyMGG(population, FAMILY_SIZE, OFFSPRING_SIZE);
+                applyMGG(population, OFFSPRING_SIZE);
                 if (i % 100 == 0) {
                     Individual bestIndividual = findBestSolution(population);
                     System.out.println("Generation " + i + ", Best Fitness: " + bestIndividual.getFitness());
@@ -175,23 +193,26 @@ public class BinPackingGA {
         // Try placing the removed item into another bin
         boolean placed = false;
         for (Bin bin : individual.bins) {
-            if (bin.canAddItem(removedItem, BIN_CAPACITY)) {
+            if (bin != selectedBin && bin.canAddItem(removedItem, BIN_CAPACITY)) {
                 bin.addItem(removedItem);
                 placed = true;
                 break;
             }
         }
 
-        // If the item was not placed in any existing bin, create a new bin
+        // If the item was not placed in any existing bin and if the selected bin is now empty, remove it
         if (!placed) {
-            Bin newBin = new Bin();
-            newBin.addItem(removedItem);
-            individual.bins.add(newBin);
+            if (selectedBin.items.isEmpty()) {
+                individual.bins.remove(selectedBin);
+            } else {
+                Bin newBin = new Bin();
+                newBin.addItem(removedItem);
+                individual.bins.add(newBin);
+            }
         }
-    }
 
-    private static Individual selectIndividual(List<Individual> population) {
-        return population.get(random.nextInt(population.size()));
+        // Cleanup: Remove any empty bins created after mutation
+        individual.bins.removeIf(bin -> bin.items.isEmpty());
     }
 
     private static Individual findBestSolution(List<Individual> population) {
