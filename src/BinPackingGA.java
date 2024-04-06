@@ -9,7 +9,7 @@ public class BinPackingGA {
     private static final Random random = new Random();
     private static final int BIN_CAPACITY = 10000;
     private static final int FAMILY_SIZE = 5;
-    private static final int OFFSPRING_SIZE = 2;
+    private static final int OFFSPRING_SIZE = 20;
     private static List<Individual> generateInitialPopulation(List<Item> items, int binCapacity, int populationSize) {
         long startTime = System.currentTimeMillis();
         System.out.println("Generating initial population...");
@@ -42,15 +42,17 @@ public class BinPackingGA {
 
 
 
-    private static List<Item> loadItems(String fileName) throws FileNotFoundException {
-        List<Item> items = new ArrayList<>();
+    private static Map<String, List<Item>> loadItems(String fileName) throws FileNotFoundException {
+        Map<String, List<Item>> testCases = new HashMap<>();
         File file = new File(fileName);
+
         try (Scanner scanner = new Scanner(file)) {
             while (scanner.hasNextLine()) {
-                String testName = scanner.nextLine().trim(); // Test case name, currently unused
+                String testName = scanner.nextLine().trim(); // Test case name
                 int numberOfItems = Integer.parseInt(scanner.nextLine().trim());
                 int binCapacity = Integer.parseInt(scanner.nextLine().trim()); // Bin capacity, can be used as needed
 
+                List<Item> items = new ArrayList<>();
                 for (int i = 0; i < numberOfItems; i++) {
                     String[] line = scanner.nextLine().trim().split("\\s+");
                     int weight = Integer.parseInt(line[0]);
@@ -60,9 +62,10 @@ public class BinPackingGA {
                         items.add(new Item(weight));
                     }
                 }
+                testCases.put(testName, items);
             }
         }
-        return items;
+        return testCases;
     }
 
     private static void applyMGG(List<Individual> population, int familySize, int offspringSize) {
@@ -99,26 +102,34 @@ public class BinPackingGA {
     public static void main(String[] args) throws FileNotFoundException {
         System.out.println("Program started");
 
-        List<Item> items = loadItems("src/BPP.txt");
-        System.out.println("Items loaded: " + items.size());
+        Map<String, List<Item>> testCases = loadItems("src/BPP.txt");
 
-        List<Individual> population = generateInitialPopulation(items, BIN_CAPACITY, POPULATION_SIZE);
-        System.out.println("Initial population generated");
-        for (int i = 0; i < GENERATIONS; i++) {
-            applyMGG(population, FAMILY_SIZE, OFFSPRING_SIZE);
-            if (i % 100 == 0) {
-                Individual bestIndividual = findBestSolution(population);
-                System.out.println("Generation " + i + ", Best Fitness: " + bestIndividual.getFitness());
+        for (Map.Entry<String, List<Item>> entry : testCases.entrySet()) {
+            String testCaseName = entry.getKey();
+            List<Item> items = entry.getValue();
+
+            System.out.println("Solving test case: " + testCaseName);
+            System.out.println("Items loaded: " + items.size());
+
+            List<Individual> population = generateInitialPopulation(items, BIN_CAPACITY, POPULATION_SIZE);
+            System.out.println("Initial population generated");
+            for (int i = 0; i < GENERATIONS; i++) {
+                applyMGG(population, FAMILY_SIZE, OFFSPRING_SIZE);
+                if (i % 100 == 0) {
+                    Individual bestIndividual = findBestSolution(population);
+                    System.out.println("Generation " + i + ", Best Fitness: " + bestIndividual.getFitness());
+                }
             }
+
+            Individual bestSolution = findBestSolution(population);
+            System.out.println("Best solution for " + testCaseName + " uses " + bestSolution.bins.size() + " bins.");
+
+            // Print the details of each bin in the best solution
+            System.out.println("Details of bins in the best solution for " + testCaseName + ":");
+            bestSolution.printBinDetails();
         }
-
-        Individual bestSolution = findBestSolution(population);
-        System.out.println("Best solution uses " + bestSolution.bins.size() + " bins.");
-
-        // Print the details of each bin in the best solution
-        System.out.println("Details of bins in the best solution:");
-        bestSolution.printBinDetails();
     }
+
 
     private static Individual crossover(Individual parent1, Individual parent2) {
 //        System.out.println("Performing crossover...");
