@@ -5,7 +5,7 @@ import java.util.stream.Collectors;
 
 public class BinPackingGA {
     private static final int POPULATION_SIZE = 100;
-    private static final int GENERATIONS = 500;
+    private static final int GENERATIONS = 400;
     private static final Random random = new Random();
     private static final int BIN_CAPACITY = 10000;
     private static final int FAMILY_SIZE = 5;
@@ -19,27 +19,28 @@ public class BinPackingGA {
 
         for (int i = 0; i < populationSize; i++) {
             List<Bin> bins = new ArrayList<>();
+            Bin currentBin = new Bin(); // Create the first bin
+
             for (Item item : items) {
-                boolean placed = false;
-                for (Bin bin : bins) {
-                    if (bin.canAddItem(item, binCapacity)) {
-                        bin.addItem(item);
-                        placed = true;
-                        break;
-                    }
-                }
-                if (!placed) {
-                    Bin newBin = new Bin();
-                    newBin.addItem(item);
-                    bins.add(newBin);
+                if (currentBin.canAddItem(item, binCapacity)) {
+                    currentBin.addItem(item); // Add the item to the current bin if there's space
+                } else {
+                    // If the item cannot fit in the current bin, move to the next bin
+                    bins.add(currentBin);
+                    currentBin = new Bin();
+                    currentBin.addItem(item);
                 }
             }
+            // Add the last bin to the list of bins
+            bins.add(currentBin);
             population.add(new Individual(bins));
         }
         long endTime = System.currentTimeMillis();
         System.out.println("Initial population generated in " + (endTime - startTime) + " ms");
         return population;
     }
+
+
 
     private static List<Item> loadItems(String fileName) throws FileNotFoundException {
         List<Item> items = new ArrayList<>();
@@ -151,19 +152,31 @@ public class BinPackingGA {
     }
 
     private static void mutate(Individual individual) {
-//        System.out.println("Performing mutation...");
-        // Randomly select a bin to mutate
         if (individual.bins.isEmpty()) return;
 
+        // Randomly select a bin to mutate
         Bin selectedBin = individual.bins.get(random.nextInt(individual.bins.size()));
         if (selectedBin.items.isEmpty()) return;
 
-        // Remove a random item from the selected bin and place it in a new bin
+        // Remove a random item from the selected bin
         Item removedItem = selectedBin.items.remove(random.nextInt(selectedBin.items.size()));
-        Bin newBin = new Bin();
-        newBin.items.add(removedItem);
-        individual.bins.add(newBin);
-//        System.out.println("Mutation completed.");
+
+        // Try placing the removed item into another bin
+        boolean placed = false;
+        for (Bin bin : individual.bins) {
+            if (bin.canAddItem(removedItem, BIN_CAPACITY)) {
+                bin.addItem(removedItem);
+                placed = true;
+                break;
+            }
+        }
+
+        // If the item was not placed in any existing bin, create a new bin
+        if (!placed) {
+            Bin newBin = new Bin();
+            newBin.addItem(removedItem);
+            individual.bins.add(newBin);
+        }
     }
 
     private static Individual selectIndividual(List<Individual> population) {
@@ -188,7 +201,7 @@ public class BinPackingGA {
         public void printBinDetails() {
             for (int i = 0; i < bins.size(); i++) {
                 Bin bin = bins.get(i);
-                int totalWeight = bin.items.stream().mapToInt(item -> item.size).sum();
+                int totalWeight = bin.items.stream().mapToInt(item -> item.size).sum(); // Calculate the total weight
                 System.out.println("Bin " + (i + 1) + ": " + bin.items + " - Total weight: " + totalWeight + "/" + BIN_CAPACITY);
             }
         }
