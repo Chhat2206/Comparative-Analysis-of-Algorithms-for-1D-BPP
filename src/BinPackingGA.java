@@ -9,8 +9,7 @@ public class BinPackingGA {
     private static final int GENERATIONS = 3000; // Number of generations for which the algorithm will run
     private static final Random random = new Random(); // Random number generator
     private static final int BIN_CAPACITY = 10000; // The capacity of each bin
-    private static final int FAMILY_SIZE = 5; // Size of the family (not used in the current implementation)
-    private static final int OFFSPRING_SIZE = 20; // Number of offspring to produce in each generation
+    private static final int OFFSPRING_SIZE = 50; // Number of offspring to produce in each generation
 
     // Generates the initial population for the genetic algorithm using a best-fit decreasing strategy
     private static List<Individual> generateInitialPopulation(List<Item> items, int binCapacity, int populationSize) {
@@ -79,27 +78,51 @@ public class BinPackingGA {
         return testCases;
     }
 
+//    private static void applyMGG(List<Individual> population, int offspringSize) {
+//        // Step 1: Select two parents
+//        Individual parent1 = population.get(random.nextInt(population.size()));
+//        Individual parent2 = population.get(random.nextInt(population.size()));
+//
+//        // Step 2: Generate offspring
+//        List<Individual> offspring = generateOffspring(parent1, parent2, offspringSize);
+//
+//        // Step 3: Combine parents and offspring into one group
+//        List<Individual> candidates = new ArrayList<>(offspring);
+//        candidates.add(parent1);
+//        candidates.add(parent2);
+//
+//        // Step 4: Evaluate and select best solutions
+//        candidates.sort(Comparator.comparing(Individual::getFitness));
+//        Individual bestOffspring1 = candidates.get(0);
+//        Individual bestOffspring2 = candidates.get(1);
+//
+//        // Step 5: Replace parents in the population with the best offspring
+//        replaceIndividuals(population, parent1, parent2, bestOffspring1, bestOffspring2);
+//    }
+
     private static void applyMGG(List<Individual> population, int offspringSize) {
-        // Step 1: Select two parents
-        Individual parent1 = population.get(random.nextInt(population.size()));
-        Individual parent2 = population.get(random.nextInt(population.size()));
+        for (int i = 0; i < offspringSize; i++) {
+            // Step 1: Select two parents
+            Individual parent1 = population.get(random.nextInt(population.size()));
+            Individual parent2 = population.get(random.nextInt(population.size()));
 
-        // Step 2: Generate offspring
-        List<Individual> offspring = generateOffspring(parent1, parent2, offspringSize);
+            // Step 2: Generate offspring
+            Individual offspring = crossover(parent1, parent2);
+            mutate(offspring);
 
-        // Step 3: Combine parents and offspring into one group
-        List<Individual> candidates = new ArrayList<>(offspring);
-        candidates.add(parent1);
-        candidates.add(parent2);
+            int index1 = population.indexOf(parent1);
+            int index2 = population.indexOf(parent2);
 
-        // Step 4: Evaluate and select best solutions
-        candidates.sort(Comparator.comparing(Individual::getFitness));
-        Individual bestOffspring1 = candidates.get(0);
-        Individual bestOffspring2 = candidates.get(1);
-
-        // Step 5: Replace parents in the population with the best offspring
-        replaceIndividuals(population, parent1, parent2, bestOffspring1, bestOffspring2);
+            // Step 3: Replace parents with offspring if offspring is better
+            if (index1 != -1 && offspring.getFitness() > parent1.getFitness()) {
+                population.set(index1, offspring);
+            }
+            if (index2 != -1 && offspring.getFitness() > parent2.getFitness()) {
+                population.set(index2, offspring);
+            }
+        }
     }
+
 
     private static List<Individual> generateOffspring(Individual parent1, Individual parent2, int offspringSize) {
         List<Individual> offspring = new ArrayList<>();
@@ -282,13 +305,5 @@ public class BinPackingGA {
             return -bins.size();
         }
 
-        public void printBinDetails() {
-            for (int i = 0; i < bins.size(); i++) {
-                Bin bin = bins.get(i);
-                int totalWeight = bin.items.stream().mapToInt(item -> item.size).sum(); // Calculate the total weight
-                System.out.println("Bin " + (i + 1) + ": " + bin.items + " - Total weight: " + totalWeight + "/" + BIN_CAPACITY);
-            }
-        }
     }
-
 }

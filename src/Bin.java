@@ -35,4 +35,9 @@ public class Bin {
         other.items.clear();
     }
 
+    // New constructor to create a Bin with a given list of items
+    public Bin(List<Item> items) {
+        this.items = new ArrayList<>(items); // Create a new list from the given items
+    }
+
 }
