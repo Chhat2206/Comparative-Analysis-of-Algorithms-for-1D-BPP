@@ -6,7 +6,7 @@ import java.util.stream.Collectors;
 public class BinPackingGA {
     // Constants
     private static final int POPULATION_SIZE = 100; // Size of the population in each generation
-    private static final int GENERATIONS = 2000; // Number of generations for which the algorithm will run
+    private static final int GENERATIONS = 3000; // Number of generations for which the algorithm will run
     private static final Random random = new Random(); // Random number generator
     private static final int BIN_CAPACITY = 10000; // The capacity of each bin
     private static final int FAMILY_SIZE = 5; // Size of the family (not used in the current implementation)
@@ -166,37 +166,43 @@ public class BinPackingGA {
         }
     }
 
-
-
     private static Individual crossover(Individual parent1, Individual parent2) {
-//        System.out.println("Performing crossover...");
-        List<Bin> offspringBins = new ArrayList<>();
-
-        // Select some bins from parent1
-        Collections.shuffle(parent1.bins);
-        offspringBins.addAll(parent1.bins.subList(0, parent1.bins.size() / 2));
-
-        // Add items from parent2 if they are not already in offspring
+        // Combine items from both parents into a single list
+        List<Item> allItems = new ArrayList<>();
+        for (Bin bin : parent1.bins) {
+            allItems.addAll(bin.items);
+        }
         for (Bin bin : parent2.bins) {
-            if (!containsAny(offspringBins, bin.items)) {
-                offspringBins.add(bin);
-            }
+            allItems.addAll(bin.items);
         }
 
-//        System.out.println("Crossover completed.");
-        return new Individual(offspringBins);
-    }
+        // Remove duplicate items if any
+        Set<Item> uniqueItems = new HashSet<>(allItems);
+        allItems.clear();
+        allItems.addAll(uniqueItems);
 
-    private static boolean containsAny(List<Bin> bins, List<Item> items) {
-        // Check if any item in 'items' is present in 'bins'
-        for (Bin bin : bins) {
-            for (Item item : items) {
-                if (bin.items.contains(item)) {
-                    return true;
+        // Shuffle the list to introduce randomness
+        Collections.shuffle(allItems, random);
+
+        // Allocate items to bins in the offspring
+        List<Bin> offspringBins = new ArrayList<>();
+        for (Item item : allItems) {
+            boolean placed = false;
+            for (Bin bin : offspringBins) {
+                if (bin.canAddItem(item, BIN_CAPACITY)) {
+                    bin.addItem(item);
+                    placed = true;
+                    break;
                 }
             }
+            if (!placed) {
+                Bin newBin = new Bin();
+                newBin.addItem(item);
+                offspringBins.add(newBin);
+            }
         }
-        return false;
+
+        return new Individual(offspringBins);
     }
 
     private static void mutate(Individual individual) {
@@ -221,25 +227,26 @@ public class BinPackingGA {
 
         // If item not placed, attempt to merge with other bins or create a new bin
         if (!placed) {
-            // Try to merge bins
             boolean merged = false;
             for (Bin bin : individual.bins) {
                 if (bin != selectedBin && bin.canMerge(selectedBin, BIN_CAPACITY)) {
                     bin.merge(selectedBin);
+                    bin.addItem(removedItem); // Add the removed item to the merged bin
                     merged = true;
                     break;
                 }
             }
 
-            // If no merging possible, create a new bin for the removed item
+            // If no merging is possible, either add the item back to its original bin or create a new bin
             if (!merged) {
-                if (!selectedBin.items.isEmpty()) {
+                if (selectedBin.canAddItem(removedItem, BIN_CAPACITY)) {
+                    // If the original bin can still accommodate the item, add it back
+                    selectedBin.addItem(removedItem);
+                } else {
+                    // If not, create a new bin for the removed item
                     Bin newBin = new Bin();
                     newBin.addItem(removedItem);
                     individual.bins.add(newBin);
-                } else {
-                    // Add item back to selected bin if no other options
-                    selectedBin.addItem(removedItem);
                 }
             }
         }
@@ -247,7 +254,6 @@ public class BinPackingGA {
         // Clean up any empty bins
         individual.bins.removeIf(bin -> bin.items.isEmpty());
     }
-
 
     private static Individual findBestSolution(List<Individual> population) {
         return Collections.max(population, Comparator.comparing(Individual::getFitness));

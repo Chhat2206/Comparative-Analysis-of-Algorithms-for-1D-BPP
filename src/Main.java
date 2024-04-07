@@ -16,19 +16,24 @@ public class Main {
             // Reading item weights and quantities
             int[] weights = new int[numberOfItems];
             int[] quantities = new int[numberOfItems];
-            int totalItems = 0; // To count the total number of items
-            int totalWeightOfAllItems = 0; // To sum the total weight of all items
+            int totalItems = 0;
+            int totalWeightOfAllItems = 0;
 
             for (int i = 0; i < numberOfItems; i++) {
                 String[] line = scanner.nextLine().trim().split("\\s+");
                 weights[i] = Integer.parseInt(line[0]);
                 quantities[i] = Integer.parseInt(line[1]);
-                totalItems += quantities[i]; // Add the quantity of each item to totalItems
-                totalWeightOfAllItems += weights[i] * quantities[i]; // Calculate the total weight
+                totalItems += quantities[i];
+                totalWeightOfAllItems += weights[i] * quantities[i];
             }
 
             // Solve the bin packing problem using Best Fit algorithm
             List<List<Integer>> bins = BestFit.applyBestFit(weights, quantities, binCapacity);
+
+            // Calculate the total weight of items in bins
+            int totalWeightInBins = bins.stream()
+                    .flatMapToInt(bin -> bin.stream().mapToInt(Integer::intValue))
+                    .sum();
 
             // Print the result
             System.out.println("Test case: " + testName);
@@ -39,8 +44,13 @@ public class Main {
                 System.out.println("Bin " + (i + 1) + ": " + bins.get(i) + " - Total weight: " + binTotalWeight + "/" + binCapacity);
             }
 
-            // Print the total weight of all items
             System.out.println("Total weight of all items in " + testName + ": " + totalWeightOfAllItems);
+            System.out.println("Total weight in bins for " + testName + ": " + totalWeightInBins);
+
+            // Check if total weights match
+            if (totalWeightOfAllItems != totalWeightInBins) {
+                System.out.println("Warning: There is a discrepancy in the total weights for " + testName);
+            }
             System.out.println();
         }
 
