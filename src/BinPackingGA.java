@@ -4,13 +4,15 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 public class BinPackingGA {
-    private static final int POPULATION_SIZE = 100;
-    private static final int GENERATIONS = 800;
-    private static final Random random = new Random();
-    private static final int BIN_CAPACITY = 10000;
-    private static final int FAMILY_SIZE = 5;
-    private static final int OFFSPRING_SIZE = 20;
+    // Constants
+    private static final int POPULATION_SIZE = 100; // Size of the population in each generation
+    private static final int GENERATIONS = 2000; // Number of generations for which the algorithm will run
+    private static final Random random = new Random(); // Random number generator
+    private static final int BIN_CAPACITY = 10000; // The capacity of each bin
+    private static final int FAMILY_SIZE = 5; // Size of the family (not used in the current implementation)
+    private static final int OFFSPRING_SIZE = 20; // Number of offspring to produce in each generation
 
+    // Generates the initial population for the genetic algorithm using a best-fit decreasing strategy
     private static List<Individual> generateInitialPopulation(List<Item> items, int binCapacity, int populationSize) {
         System.out.println("Generating initial population with BFD...");
 
@@ -51,7 +53,6 @@ public class BinPackingGA {
         return population;
     }
 
-
     private static Map<String, List<Item>> loadItems(String fileName) throws FileNotFoundException {
         Map<String, List<Item>> testCases = new HashMap<>();
         File file = new File(fileName);
@@ -84,37 +85,38 @@ public class BinPackingGA {
         Individual parent2 = population.get(random.nextInt(population.size()));
 
         // Step 2: Generate offspring
-        List<Individual> offspring = generateOffspring(Arrays.asList(parent1, parent2), offspringSize);
+        List<Individual> offspring = generateOffspring(parent1, parent2, offspringSize);
 
-        // Evaluate and select for replacement
+        // Step 3: Combine parents and offspring into one group
         List<Individual> candidates = new ArrayList<>(offspring);
         candidates.add(parent1);
         candidates.add(parent2);
 
-        // Sort based on fitness
+        // Step 4: Evaluate and select best solutions
         candidates.sort(Comparator.comparing(Individual::getFitness));
+        Individual bestOffspring1 = candidates.get(0);
+        Individual bestOffspring2 = candidates.get(1);
 
-        // Step 3: Replace two worst individuals in the population with the best two offspring
-        replaceWorstIndividuals(population, candidates.subList(0, 2));
+        // Step 5: Replace parents in the population with the best offspring
+        replaceIndividuals(population, parent1, parent2, bestOffspring1, bestOffspring2);
     }
 
-    private static void replaceWorstIndividuals(List<Individual> population, List<Individual> newIndividuals) {
-        population.sort(Comparator.comparing(Individual::getFitness).reversed());
-        for (int i = 0; i < newIndividuals.size(); i++) {
-            population.set(population.size() - 1 - i, newIndividuals.get(i));
-        }
-    }
-
-    private static List<Individual> generateOffspring(List<Individual> family, int offspringSize) {
+    private static List<Individual> generateOffspring(Individual parent1, Individual parent2, int offspringSize) {
         List<Individual> offspring = new ArrayList<>();
         for (int i = 0; i < offspringSize; i++) {
-            Individual parent1 = family.get(random.nextInt(family.size()));
-            Individual parent2 = family.get(random.nextInt(family.size()));
-            Individual child = crossover(parent1, parent2);
-            mutate(child);
+            Individual child = crossover(parent1, parent2); // Existing crossover logic
+            mutate(child); // Existing mutation logic
             offspring.add(child);
         }
         return offspring;
+    }
+
+    private static void replaceIndividuals(List<Individual> population, Individual parent1, Individual parent2, Individual offspring1, Individual offspring2) {
+        int index1 = population.indexOf(parent1);
+        int index2 = population.indexOf(parent2);
+
+        population.set(index1, offspring1);
+        population.set(index2, offspring2);
     }
 
     public static void main(String[] args) throws FileNotFoundException {
@@ -144,9 +146,26 @@ public class BinPackingGA {
 
             // Print the details of each bin in the best solution
             System.out.println("Details of bins in the best solution for " + testCaseName + ":");
-            bestSolution.printBinDetails();
+            int totalWeightInBins = 0;
+            for (int i = 0; i < bestSolution.bins.size(); i++) {
+                Bin bin = bestSolution.bins.get(i);
+                int binTotalWeight = bin.items.stream().mapToInt(item -> item.size).sum();
+                totalWeightInBins += binTotalWeight;
+                System.out.println("Bin " + (i + 1) + ": " + bin.items + " - Total weight: " + binTotalWeight + "/" + BIN_CAPACITY);
+            }
+
+            // Calculate and print the total weight of all items
+            int totalWeightOfAllItems = items.stream().mapToInt(item -> item.size).sum();
+            System.out.println("Total weight in bins for " + testCaseName + ": " + totalWeightInBins);
+            System.out.println("Total weight of all items in " + testCaseName + ": " + totalWeightOfAllItems);
+
+            // Check if total weights match
+            if(totalWeightOfAllItems != totalWeightInBins){
+                System.out.println("Warning: There is a discrepancy in the total weights for " + testCaseName);
+            }
         }
     }
+
 
 
     private static Individual crossover(Individual parent1, Individual parent2) {
@@ -190,7 +209,7 @@ public class BinPackingGA {
         // Remove a random item from the selected bin
         Item removedItem = selectedBin.items.remove(random.nextInt(selectedBin.items.size()));
 
-        // Try placing the removed item into another bin
+        // Attempt to place the removed item into a different bin
         boolean placed = false;
         for (Bin bin : individual.bins) {
             if (bin != selectedBin && bin.canAddItem(removedItem, BIN_CAPACITY)) {
@@ -200,20 +219,35 @@ public class BinPackingGA {
             }
         }
 
-        // If the item was not placed in any existing bin and if the selected bin is now empty, remove it
+        // If item not placed, attempt to merge with other bins or create a new bin
         if (!placed) {
-            if (selectedBin.items.isEmpty()) {
-                individual.bins.remove(selectedBin);
-            } else {
-                Bin newBin = new Bin();
-                newBin.addItem(removedItem);
-                individual.bins.add(newBin);
+            // Try to merge bins
+            boolean merged = false;
+            for (Bin bin : individual.bins) {
+                if (bin != selectedBin && bin.canMerge(selectedBin, BIN_CAPACITY)) {
+                    bin.merge(selectedBin);
+                    merged = true;
+                    break;
+                }
+            }
+
+            // If no merging possible, create a new bin for the removed item
+            if (!merged) {
+                if (!selectedBin.items.isEmpty()) {
+                    Bin newBin = new Bin();
+                    newBin.addItem(removedItem);
+                    individual.bins.add(newBin);
+                } else {
+                    // Add item back to selected bin if no other options
+                    selectedBin.addItem(removedItem);
+                }
             }
         }
 
-        // Cleanup: Remove any empty bins created after mutation
+        // Clean up any empty bins
         individual.bins.removeIf(bin -> bin.items.isEmpty());
     }
+
 
     private static Individual findBestSolution(List<Individual> population) {
         return Collections.max(population, Comparator.comparing(Individual::getFitness));

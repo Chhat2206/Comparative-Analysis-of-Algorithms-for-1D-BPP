@@ -24,4 +24,15 @@ public class Bin {
     public boolean canAddItem(Item item, int binCapacity) {
         return getCurrentSize() + item.size <= binCapacity;
     }
+
+    public boolean canMerge(Bin other, int binCapacity) {
+        int totalSize = this.getCurrentSize() + other.getCurrentSize();
+        return totalSize <= binCapacity;
+    }
+
+    public void merge(Bin other) {
+        this.items.addAll(other.items);
+        other.items.clear();
+    }
+
 }
