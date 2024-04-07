@@ -6,7 +6,7 @@ import java.util.stream.Collectors;
 public class BinPackingGA {
     // Constants
     private static final int POPULATION_SIZE = 100; // Size of the population in each generation
-    private static final int GENERATIONS = 3000; // Number of generations for which the algorithm will run
+    private static final int GENERATIONS = 90000; // Number of generations for which the algorithm will run
     private static final Random random = new Random(); // Random number generator
     private static final int BIN_CAPACITY = 10000; // The capacity of each bin
     private static final int OFFSPRING_SIZE = 50; // Number of offspring to produce in each generation
@@ -249,6 +249,7 @@ public class BinPackingGA {
         Item removedItem = selectedBin.items.remove(random.nextInt(selectedBin.items.size()));
 
         // Attempt to place the removed item into a different bin
+        // Attempt to place the removed item into a different bin
         boolean placed = false;
         for (Bin bin : individual.bins) {
             if (bin != selectedBin && bin.canAddItem(removedItem, BIN_CAPACITY)) {
@@ -257,6 +258,20 @@ public class BinPackingGA {
                 break;
             }
         }
+
+        // If item not placed, attempt to merge with other bins or create a new bin
+        if (!placed) {
+            // Check if adding the item to a new bin will exceed the capacity
+            if (selectedBin.getCurrentSize() + removedItem.size <= BIN_CAPACITY) {
+                selectedBin.addItem(removedItem); // Add the item back to its original bin
+            } else {
+                // If the original bin cannot accommodate the item, create a new bin for it
+                Bin newBin = new Bin();
+                newBin.addItem(removedItem);
+                individual.bins.add(newBin);
+            }
+        }
+
 
         // If item not placed, attempt to merge with other bins or create a new bin
         if (!placed) {
