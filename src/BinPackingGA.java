@@ -221,24 +221,22 @@ public class BinPackingGA {
 
         // Allocate items to bins in the offspring
         List<Bin> offspringBins = new ArrayList<>();
+        Bin currentBin = new Bin(); // Start with an empty bin
+        offspringBins.add(currentBin); // Add the first bin to the list
         for (Item item : allItems) {
-            boolean placed = false;
-            for (Bin bin : offspringBins) {
-                if (bin.canAddItem(item, BIN_CAPACITY)) {
-                    bin.addItem(item);
-                    placed = true;
-                    break;
-                }
+            // Check if adding the item to the current bin exceeds its capacity
+            if (!currentBin.canAddItem(item, BIN_CAPACITY)) {
+                // If the current bin is full, create a new bin
+                currentBin = new Bin();
+                offspringBins.add(currentBin); // Add the new bin to the list
             }
-            if (!placed) {
-                Bin newBin = new Bin();
-                newBin.addItem(item);
-                offspringBins.add(newBin);
-            }
+            // Add the item to the current bin
+            currentBin.addItem(item);
         }
 
         return new Individual(offspringBins);
     }
+
 
     private static void mutate(Individual individual) {
         if (individual.bins.isEmpty()) return;
