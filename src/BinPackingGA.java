@@ -128,7 +128,7 @@ public class BinPackingGA {
             String testCaseName = entry.getKey();
             List<Item> items = entry.getValue();
 
-            System.out.println("Solving test case: " + testCaseName);
+            printColored("Solving test case: " + testCaseName, ANSI_YELLOW);
             System.out.println("Items loaded: " + items.size());
 
             List<Individual> population = generateInitialPopulation(items, BIN_CAPACITY, POPULATION_SIZE);
@@ -142,10 +142,10 @@ public class BinPackingGA {
             }
 
             Individual bestSolution = findBestSolution(population);
-            System.out.println("Best solution for " + testCaseName + " uses " + bestSolution.bins.size() + " bins.");
+            printColored("Best solution for " + testCaseName + " uses " + bestSolution.bins.size() + " bins.", ANSI_GREEN);
 
             // Print the details of each bin in the best solution
-            System.out.println("Details of bins in the best solution for " + testCaseName + ":");
+            System.out.println("\nBegin test for BIN " + testCaseName + ":");
             int totalWeightInBins = 0;
             for (int i = 0; i < bestSolution.bins.size(); i++) {
                 Bin bin = bestSolution.bins.get(i);
@@ -163,7 +163,19 @@ public class BinPackingGA {
             if(totalWeightOfAllItems != totalWeightInBins){
                 System.out.println("Warning: There is a discrepancy in the total weights for " + testCaseName);
             }
+
+            System.out.println("\n");
         }
+    }
+
+    // ANSI color code declarations
+    public static final String ANSI_RESET = "\u001B[0m";
+    public static final String ANSI_YELLOW = "\u001B[33m";
+    public static final String ANSI_GREEN = "\u001B[32m";
+
+    // Method for printing colored text to the console
+    private static void printColored(String text, String colorCode) {
+        System.out.println(colorCode + text + ANSI_RESET);
     }
 
     private static Individual crossover(Individual parent1, Individual parent2) {
