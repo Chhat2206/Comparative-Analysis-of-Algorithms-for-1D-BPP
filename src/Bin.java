@@ -8,13 +8,13 @@ public class Bin {
         this.items = new ArrayList<>();
     }
 
-    public void addItem(Item item) {
-        items.add(item);
+    // Add a constructor that accepts a list of items
+    public Bin(List<Item> items) {
+        this.items = new ArrayList<>(items); // Create a new list based on the passed items
     }
 
-    // Method to check if nthe bin is empty
-    public boolean isEmpty() {
-        return items.isEmpty();
+    public void addItem(Item item) {
+        items.add(item);
     }
 
     public int getCurrentSize() {
@@ -25,19 +25,5 @@ public class Bin {
         return getCurrentSize() + item.size <= binCapacity;
     }
 
-    public boolean canMerge(Bin other, int binCapacity) {
-        int totalSize = this.getCurrentSize() + other.getCurrentSize();
-        return totalSize <= binCapacity;
-    }
-
-    public void merge(Bin other) {
-        this.items.addAll(other.items);
-        other.items.clear();
-    }
-
-    // New constructor to create a Bin with a given list of items
-    public Bin(List<Item> items) {
-        this.items = new ArrayList<>(items); // Create a new list from the given items
-    }
-
+    // You might also want to implement other necessary methods here
 }
