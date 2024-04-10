@@ -25,5 +25,7 @@ public class Bin {
         return getCurrentSize() + item.size <= binCapacity;
     }
 
-    // You might also want to implement other necessary methods here
+    public boolean isEmpty() {
+        return items.isEmpty();
+    }
 }
