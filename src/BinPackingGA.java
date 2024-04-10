@@ -6,14 +6,34 @@ import java.util.stream.IntStream;
 
 public class BinPackingGA {
     // Constants
-    private static final int POPULATION_SIZE = 1000; // Size of the population in each generation
-    private static final int GENERATIONS = 15000; // Number of generations for which the algorithm will run
+    private static final int POPULATION_SIZE = 1000;
+    // n set between 50 and 1000. Smaller problems might work well with 50-100, while larger,
+    // more complex problems may require more diverse genetic pool but increase computation time.
+    // A balance must be found between diversity and computational efficiency.
+
+    private static final int GENERATIONS = 1000;
+    // Can range from tens to thousands,
+    // More generations allow more time for the algorithm to evolve solutions but increase computation time.
+    // Stop the algorithm if no significant improvement is observed over several generations.
     private static final Random random = new Random(); // Random number generator
     private static final int BIN_CAPACITY = 10000; // The capacity of each bin
-    private static final int OFFSPRING_SIZE = 500; // Number of offspring to produce in each generation
-    private static final double MUTATION_RATE = 0.05; // Chance of offspring undergoing mutation, e.g., 0.05 for 5% chance
+    private static final int OFFSPRING_SIZE = 500;
+    private static final double MUTATION_RATE = 0.01;
+    // the probability of random changes in individual genes.
+    // Generally low, often between 0.001 and 0.01.
+    // A higher rate can prevent premature convergence to local optima by introducing diversity,
+    // but too high a rate can turn the search into a random walk.
+
+    private static final double CROSSOVER_PROBABILITY = 0.7;
+    //The probability of crossover (mating) between individuals.
+    //Typically set between 0.6 and 0.9.
+    //Tweaking: Higher rates increase genetic diversity but might disrupt convergence.
 
     // Adjust initial population generation method
+
+    private static final int TOURNAMENT_SIZE = 5;
+    private static final int ELITISM_SIZE = 2;
+
     private static List<Individual> generateInitialPopulation(List<Item> items, int binCapacity, int populationSize) {
         // Sort items in non-increasing order
         items.sort((item1, item2) -> item2.size - item1.size);
@@ -204,33 +224,78 @@ public class BinPackingGA {
         return testCases;
     }
 
+    private static Individual tournamentSelection(List<Individual> population) {
+        List<Individual> tournament = new ArrayList<>();
+        for (int i = 0; i < TOURNAMENT_SIZE; i++) {
+            Individual randomIndividual = population.get(random.nextInt(population.size()));
+            tournament.add(randomIndividual);
+        }
+        return Collections.max(tournament, Comparator.comparing(Individual::getFitness));
+        // This line returns the best individual from the tournament, i.e., the one with the highest fitness value.
+        //Collections.max is a utility method that finds the maximum element of the given collection, according to the order induced by the specified comparator.
+        // In this case, the comparator is based on the fitness of the individuals (Individual::getFitness)
+    }
+
     private static void selectionUsingMGG(List<Individual> population, int offspringSize, int binCapacity) {
         Random random = new Random();
 
-        // Select two parents randomly
+        // Select elites for preservation
+        List<Individual> elites = getElites(population, ELITISM_SIZE);
+
+        // Pick two parents randomly
         Individual parent1 = population.get(random.nextInt(population.size()));
         Individual parent2 = population.get(random.nextInt(population.size()));
 
         // Generate offspring
         List<Individual> offspring = IntStream.range(0, offspringSize)
-                .mapToObj(i -> crossover(parent1, parent2, binCapacity))
+                .mapToObj(i -> {
+                    if (random.nextDouble() < CROSSOVER_PROBABILITY) {
+                        // Perform crossover
+                        return crossover(parent1, parent2, binCapacity);
+                    } else {
+                        // No crossover, just copy one of the parents
+                        return random.nextBoolean() ? new Individual(new ArrayList<>(parent1.bins))
+                                : new Individual(new ArrayList<>(parent2.bins));
+                    }
+                })
                 .collect(Collectors.toList());
 
-        // Combine parents and offspring
-        List<Individual> group = new ArrayList<>(offspring);
-        group.add(parent1);
-        group.add(parent2);
+        // Apply mutation to the offspring
+        offspring.forEach(individual -> {
+            if (random.nextDouble() < MUTATION_RATE) {
+                mutate(individual, binCapacity);
+            }
+        });
 
-        // Sort by fitness (you may need to implement a fitness function)
-        group.sort(Comparator.comparing(Individual::getFitness));
+        // Combine the current population and offspring
+        List<Individual> combinedGroup = new ArrayList<>(population);
+        combinedGroup.addAll(offspring);
 
-        // Replace the worst individuals in the population with the best in the group
-        for (int i = 0; i < 2; i++) {
-            population.remove(parent1);
-            population.remove(parent2);
-            population.add(group.get(i));
+        // Sort by fitness and replace the population with the best individuals, preserving elites
+        combinedGroup.sort(Comparator.comparing(Individual::getFitness));
+        population.clear();
+        population.addAll(elites);
+        population.addAll(combinedGroup.stream()
+                .distinct() // Avoid duplicating elites
+                .limit(POPULATION_SIZE - ELITISM_SIZE)
+                .collect(Collectors.toList()));
+    }
+
+    // Methods for elitism
+    private static List<Individual> getElites(List<Individual> population, int numberOfElites) {
+        return population.stream()
+                .sorted(Comparator.comparing(Individual::getFitness).reversed())
+                .limit(numberOfElites)
+                .collect(Collectors.toList());
+    }
+
+    private static void includeElites(List<Individual> population, List<Individual> elites) {
+        for (Individual elite : elites) {
+            population.remove(elite);
+            population.add(elite);
         }
     }
+
 
     private static Individual findBestSolution(List<Individual> population) {
         return Collections.max(population, Comparator.comparing(Individual::getFitness));
