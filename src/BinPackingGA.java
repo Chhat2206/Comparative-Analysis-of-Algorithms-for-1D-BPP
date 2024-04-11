@@ -1,5 +1,4 @@
 import java.io.*;
-import java.sql.SQLOutput;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -11,13 +10,15 @@ public class BinPackingGA {
     // more complex problems may require more diverse genetic pool but increase computation time.
     // A balance must be found between diversity and computational efficiency.
 
-    private static final int GENERATIONS = 1000;
+    private static final int GENERATIONS = 50;
     // Can range from tens to thousands,
     // More generations allow more time for the algorithm to evolve solutions but increase computation time.
     // Stop the algorithm if no significant improvement is observed over several generations.
     private static final Random random = new Random(); // Random number generator
     private static final int BIN_CAPACITY = 10000; // The capacity of each bin
     private static final int OFFSPRING_SIZE = 500;
+    // A larger population size allows for more exploration but also increases computational complexity. 500 individuals is a reasonable size for many problems
+
     private static final double MUTATION_RATE = 0.01;
     // the probability of random changes in individual genes.
     // Generally low, often between 0.001 and 0.01.
@@ -34,16 +35,18 @@ public class BinPackingGA {
     private static final int TOURNAMENT_SIZE = 5;
     private static final int ELITISM_SIZE = 2;
 
-    private static List<Individual> generateInitialPopulation(List<Item> items, int binCapacity, int populationSize) {
-        // Sort items in non-increasing order
-        items.sort((item1, item2) -> item2.size - item1.size);
-
+    private static List<Individual> generateInitialPopulation(List<Item> originalItems, int binCapacity, int populationSize) {
         List<Individual> population = new ArrayList<>();
+
         for (int i = 0; i < populationSize; i++) {
+            List<Item> items = new ArrayList<>(originalItems);
+            Collections.shuffle(items);  // Randomly shuffle the items
             population.add(generateIndividualUsingFF(items, binCapacity));
         }
+
         return population;
     }
+
 
     // First-Fit procedure
     private static Individual generateIndividualUsingFF(List<Item> items, int binCapacity) {
@@ -65,21 +68,40 @@ public class BinPackingGA {
     }
 
     private static Individual crossover(Individual parent1, Individual parent2, int binCapacity) {
-        // Step 1: Inherit bins from both parents
-        List<Bin> offspringBins = inheritBinsFromParents(parent1, parent2);
+        List<Bin> offspringBins = new ArrayList<>();
+        Set<Item> tempSetT = new HashSet<>();
 
-        // Step 2: Local optimization - Repack bins using FF and MBS’
-        repackBinsUsingFFAndMBS(offspringBins, binCapacity);
+        // Step 1: Select bins from parent1
+        for (Bin bin : parent1.bins) {
+            if (random.nextBoolean()) {
+                offspringBins.add(new Bin(new ArrayList<>(bin.items)));
+                tempSetT.addAll(bin.items);
+            }
+        }
+
+        // Step 2: Copy non-conflicting bins from parent2
+        for (Bin bin : parent2.bins) {
+            if (Collections.disjoint(bin.items, tempSetT)) {
+                offspringBins.add(new Bin(new ArrayList<>(bin.items)));
+            } else {
+                tempSetT.addAll(bin.items);
+            }
+        }
+
+        // Step 3: Replacement procedure
+        replaceItemsInOffspringBins(offspringBins, tempSetT, binCapacity);
+
+        // Step 4: First-Fit for remaining items in T
+        applyFirstFitProcedure(offspringBins, tempSetT, binCapacity);
+
+        // Step 5: Modified Best-Fit Slack (assuming its logic is similar to Best-Fit)
+        applyModifiedBestFitSlack(offspringBins, tempSetT, binCapacity);
 
         return new Individual(offspringBins);
     }
 
-    private static void repackBinsUsingFFAndMBS(List<Bin> bins, int binCapacity) {
-        List<Item> allItems = flattenItems(bins);
-        bins.clear(); // Clear existing bins for repacking
-
-        // First-Fit (FF)
-        for (Item item : allItems) {
+    private static void applyFirstFitProcedure(List<Bin> bins, Set<Item> items, int binCapacity) {
+        for (Item item : items) {
             boolean placed = false;
             for (Bin bin : bins) {
                 if (bin.canAddItem(item, binCapacity)) {
@@ -94,26 +116,78 @@ public class BinPackingGA {
                 bins.add(newBin);
             }
         }
+    }
 
-        // Modified Best-Fit Slack (MBS’)
-        List<Item> remainingItems = flattenItems(bins);
-        bins.clear(); // Clear bins for final packing
+    private static void replaceItemsInOffspringBins(List<Bin> offspringBins, Set<Item> tempSetT, int binCapacity) {
+        for (Bin bin : offspringBins) {
+            // Find the best replacement combination from tempSetT
+            List<Item> bestReplacement = findBestReplacement(bin, tempSetT, binCapacity);
 
-        for (Item item : remainingItems) {
-            Bin bestFitBin = null;
-            int minSpaceLeft = Integer.MAX_VALUE;
+            // Perform the replacement if a better combination is found
+            if (!bestReplacement.isEmpty()) {
+                bin.items.clear();
+                bin.items.addAll(bestReplacement);
 
-            for (Bin bin : bins) {
-                int spaceLeft = binCapacity - bin.getCurrentSize();
-                if (spaceLeft >= item.size && spaceLeft < minSpaceLeft) {
-                    bestFitBin = bin;
-                    minSpaceLeft = spaceLeft;
-                }
+                // Update tempSetT by removing used items and adding back items removed from the bin
+                updateTempSetT(tempSetT, bestReplacement, bin);
             }
+        }
+    }
 
+    private static List<Item> findBestReplacement(Bin bin, Set<Item> tempSetT, int binCapacity) {
+        List<Item> bestCombination = new ArrayList<>();
+        int currentSize = 0;
+
+        for (Item item : tempSetT) {
+            if (currentSize + item.size <= binCapacity) {
+                bestCombination.add(item);
+                currentSize += item.size;
+            }
+        }
+
+        return bestCombination;
+    }
+
+
+    private static int calculateTotalSize(List<Item> items) {
+        int totalSize = 0;
+        for (Item item : items) {
+            totalSize += item.size;
+        }
+        return totalSize;
+    }
+
+    private static List<List<Item>> generateAllCombinations(List<Item> items) {
+        List<List<Item>> combinations = new ArrayList<>();
+        // Base case: adding empty list
+        combinations.add(new ArrayList<>());
+
+        for (Item item : items) {
+            List<List<Item>> newCombinations = new ArrayList<>();
+            for (List<Item> current : combinations) {
+                List<Item> newCombination = new ArrayList<>(current);
+                newCombination.add(item);
+                newCombinations.add(newCombination);
+            }
+            combinations.addAll(newCombinations);
+        }
+        return combinations;
+    }
+
+
+    private static void updateTempSetT(Set<Item> tempSetT, List<Item> newItems, Bin bin) {
+        tempSetT.removeAll(newItems);
+        tempSetT.addAll(bin.items);
+    }
+
+    private static void applyModifiedBestFitSlack(List<Bin> bins, Set<Item> items, int binCapacity) {
+        for (Item item : new HashSet<>(items)) {
+            Bin bestFitBin = findBestFitBin(bins, item, binCapacity);
             if (bestFitBin != null) {
                 bestFitBin.addItem(item);
+                items.remove(item);
             } else {
+                // If no suitable bin found, create a new bin
                 Bin newBin = new Bin();
                 newBin.addItem(item);
                 bins.add(newBin);
@@ -121,19 +195,20 @@ public class BinPackingGA {
         }
     }
 
-    private static List<Item> flattenItems(List<Bin> bins) {
-        List<Item> items = new ArrayList<>();
+    private static Bin findBestFitBin(List<Bin> bins, Item item, int binCapacity) {
+        Bin bestFitBin = null;
+        int minSpaceLeft = Integer.MAX_VALUE;
+
         for (Bin bin : bins) {
-            items.addAll(bin.items);
+            int spaceLeft = binCapacity - bin.getCurrentSize();
+            if (spaceLeft >= item.size && spaceLeft < minSpaceLeft) {
+                bestFitBin = bin;
+                minSpaceLeft = spaceLeft;
+            }
         }
-        return items;
+        return bestFitBin;
     }
 
-    private static List<Bin> inheritBinsFromParents(Individual parent1, Individual parent2) {
-        List<Bin> inheritedBins = new ArrayList<>();
-        // Implement logic to inherit bins from parents (as per your current approach or a modified approach)
-        return inheritedBins;
-    }
 
     // mutation function goes wild at 100 population size and 50 generation size
     private static void mutate(Individual individual, int binCapacity) {
@@ -237,23 +312,20 @@ public class BinPackingGA {
     }
 
     private static void selectionUsingMGG(List<Individual> population, int offspringSize, int binCapacity) {
-        Random random = new Random();
-
         // Select elites for preservation
         List<Individual> elites = getElites(population, ELITISM_SIZE);
-
-        // Pick two parents randomly
-        Individual parent1 = population.get(random.nextInt(population.size()));
-        Individual parent2 = population.get(random.nextInt(population.size()));
 
         // Generate offspring
         List<Individual> offspring = IntStream.range(0, offspringSize)
                 .mapToObj(i -> {
+                    // Use tournament selection to pick parents
+                    Individual parent1 = tournamentSelection(population);
+                    Individual parent2 = tournamentSelection(population);
+
+                    // Perform crossover or simply copy a parent based on probability
                     if (random.nextDouble() < CROSSOVER_PROBABILITY) {
-                        // Perform crossover
                         return crossover(parent1, parent2, binCapacity);
                     } else {
-                        // No crossover, just copy one of the parents
                         return random.nextBoolean() ? new Individual(new ArrayList<>(parent1.bins))
                                 : new Individual(new ArrayList<>(parent2.bins));
                     }
@@ -281,6 +353,7 @@ public class BinPackingGA {
                 .collect(Collectors.toList()));
     }
 
+
     // Methods for elitism
     private static List<Individual> getElites(List<Individual> population, int numberOfElites) {
         return population.stream()
@@ -288,14 +361,6 @@ public class BinPackingGA {
                 .limit(numberOfElites)
                 .collect(Collectors.toList());
     }
-
-    private static void includeElites(List<Individual> population, List<Individual> elites) {
-        for (Individual elite : elites) {
-            population.remove(elite);
-            population.add(elite);
-        }
-    }
-
 
     private static Individual findBestSolution(List<Individual> population) {
         return Collections.max(population, Comparator.comparing(Individual::getFitness));
@@ -338,7 +403,6 @@ public class BinPackingGA {
                         mutate(population.get(j), BIN_CAPACITY);
                     }
                 }
-
 
                 // Generation-wise logging (keeping your existing logging)
                 if (i % 100 == 0) {
@@ -384,5 +448,4 @@ public class BinPackingGA {
     private static void printColored(String text, String colorCode) {
         System.out.println(colorCode + text + ANSI_RESET);
     }
-
 }
