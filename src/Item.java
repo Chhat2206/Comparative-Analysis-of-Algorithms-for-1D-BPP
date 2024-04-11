@@ -5,6 +5,10 @@ public class Item {
         this.size = size;
     }
 
+    public int getSize() {
+        return size;
+    }
+
     @Override
     public String toString() {
         return String.valueOf(size);

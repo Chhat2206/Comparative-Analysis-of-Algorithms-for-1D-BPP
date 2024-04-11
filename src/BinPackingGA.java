@@ -184,61 +184,72 @@ public class BinPackingGA {
 
 
     private static void mutate(Individual individual, int binCapacity) {
-        // Make a deep copy of the original bins before mutation
-        List<Bin> originalBins = deepCopyBins(individual.bins);
-
-        // Step 1: Select a subset of bins at random for mutation
+        // Select bins randomly for mutation and extract items
         List<Bin> selectedBins = selectRandomBinsForMutation(individual, 2);
         Set<Item> temporaryItems = new HashSet<>();
-
-        // Extract items from selected bins
         for (Bin bin : selectedBins) {
             temporaryItems.addAll(bin.items);
-            bin.items.clear(); // Clear the items in the selected bin
+            bin.items.clear();
         }
 
-        // Step 2: Shuffle the items for randomness
+        // Shuffle and redistribute items
         List<Item> shuffledItems = new ArrayList<>(temporaryItems);
         Collections.shuffle(shuffledItems);
-
-        // Step 3: Attempt to reorganize items back into the selected bins
         for (Item item : shuffledItems) {
-            Optional<Bin> suitableBin = selectedBins.stream()
-                    .filter(bin -> bin.canAddItem(item, binCapacity))
-                    .findFirst();
+            boolean placed = false;
+            for (Bin bin : individual.bins) {
+                if (bin.canAddItem(item, binCapacity)) {
+                    bin.addItem(item);
+                    placed = true;
+                    break;
+                }
+            }
+            // Return items to their original bin if not placed
+            if (!placed) {
+                findOriginalBinForItem(item, individual).addItem(item);
+            }
+        }
 
-            if (suitableBin.isPresent()) {
-                suitableBin.get().addItem(item);
-            } else {
-                // If the item doesn't fit in any of the selected bins, add it back to its original bin
-                Bin originalBin = findBinForItem(item, originalBins);
-                if (originalBin != null) {
-                    originalBin.addItem(item);
-                } else {
-                    // Place the item in a new bin if it doesn't fit anywhere else
+        // Check if all items are placed and handle any missing items
+        handleMissingItems(individual, temporaryItems, binCapacity);
+    }
+
+    private static void handleMissingItems(Individual individual, Set<Item> allItems, int binCapacity) {
+        Set<Item> placedItems = individual.bins.stream()
+                .flatMap(bin -> bin.items.stream())
+                .collect(Collectors.toSet());
+        allItems.removeAll(placedItems); // Remove items that are already placed
+
+        // Place remaining items in new or existing bins
+        for (Item item : allItems) {
+            boolean placed = false;
+            for (Bin bin : individual.bins) {
+                if (bin.canAddItem(item, binCapacity)) {
+                    bin.addItem(item);
+                    placed = true;
+                    break;
+                }
+            }
+            if (!placed) {
+                Bin newBin = new Bin();
+                newBin.addItem(item);
+                individual.bins.add(newBin);
+            }
+        }
+    }
+
+    private static Bin findOriginalBinForItem(Item item, Individual individual) {
+        // Find the original bin where this item was located before the mutation
+        return individual.bins.stream()
+                .filter(bin -> bin.items.contains(item))
+                .findFirst()
+                .orElseGet(() -> {
+                    // If the item is not found in any bin, create a new bin for it
                     Bin newBin = new Bin();
                     newBin.addItem(item);
                     individual.bins.add(newBin);
-                }
-            }
-        }
-    }
-
-    private static Bin findBinForItem(Item item, List<Bin> bins) {
-        // Find the bin where this item was located before the mutation
-        for (Bin bin : bins) {
-            if (bin.items.contains(item)) {
-                return bin;
-            }
-        }
-        return null; // Return null if the item is not found in any bin
-    }
-
-    private static List<Bin> deepCopyBins(List<Bin> bins) {
-        // Deep copy each bin and its items
-        return bins.stream()
-                .map(bin -> new Bin(new ArrayList<>(bin.items)))
-                .collect(Collectors.toList());
+                    return newBin;
+                });
     }
 
     private static List<Bin> selectRandomBinsForMutation(Individual individual, int numBins) {
@@ -255,7 +266,7 @@ public class BinPackingGA {
             while (scanner.hasNextLine()) {
                 String testName = scanner.nextLine().trim(); // Test case name
                 int numberOfItems = Integer.parseInt(scanner.nextLine().trim());
-                int binCapacity = Integer.parseInt(scanner.nextLine().trim()); // Bin capacity, can be used as needed
+                int binCapacity = Integer.parseInt(scanner.nextLine().trim()); // Bin capacity
 
                 List<Item> items = new ArrayList<>();
                 for (int i = 0; i < numberOfItems; i++) {
@@ -354,12 +365,14 @@ public class BinPackingGA {
     }
 
     public static void main(String[] args) throws FileNotFoundException {
+        long startTime = System.currentTimeMillis();
         System.out.println("Program started");
 
         Map<String, List<Item>> testCases = loadItems("src/BPP.txt");
 
         for (Map.Entry<String, List<Item>> entry : testCases.entrySet()) {
             String testCaseName = entry.getKey();
+            List<Item> allItems = new ArrayList<>(entry.getValue()); // Define allItems
             List<Item> items = entry.getValue();
 
             printColored("Solving test case: " + testCaseName, ANSI_YELLOW);
@@ -367,6 +380,8 @@ public class BinPackingGA {
 
             List<Individual> population = generateInitialPopulation(items, BIN_CAPACITY, POPULATION_SIZE);
             System.out.println("Initial population generated");
+            validateAndLogBinWeights(population, allItems, "Initial Population Generation");
+
             for (int i = 0; i < GENERATIONS; i++) {
                 // Apply MGG
                 selectionUsingMGG(population, OFFSPRING_SIZE, BIN_CAPACITY);
@@ -375,6 +390,7 @@ public class BinPackingGA {
                 for (int j = 0; j < population.size(); j++) {
                     if (random.nextDouble() < MUTATION_RATE) {
                         mutate(population.get(j), BIN_CAPACITY);
+                        validateAndLogBinWeights(population, allItems, "Crossover in Generation " + i);  // Validation after crossover
                     }
                 }
 
@@ -382,6 +398,7 @@ public class BinPackingGA {
                 if (i % 100 == 0) {
                     Individual bestIndividual = findBestSolution(population);
                     System.out.println("Generation " + i + ", Best Fitness: " + bestIndividual.getFitness());
+                    validateAndLogBinWeights(population, allItems, "Mutation in Generation " + i);  // Validation after mutation
                 }
             }
 
@@ -407,16 +424,38 @@ public class BinPackingGA {
             if(totalWeightOfAllItems != totalWeightInBins){
                 System.out.println("Warning: There is a discrepancy in the total weights for " + testCaseName);
             }
+            long endTime = System.currentTimeMillis(); // End timer
+            double totalTime = endTime - startTime; // Calculate total time
+
+            System.out.println("Execution Time: " + totalTime/1000 + " seconds");
 
             System.out.println("\n");
         }
     }
+
+    private static void validateAndLogBinWeights(List<Individual> population, List<Item> allItems, String stage) {
+        int totalItemWeight = allItems.stream().mapToInt(Item::getSize).sum();
+        int totalBinWeight = population.stream()
+                .flatMap(individual -> individual.bins.stream())
+                .flatMap(bin -> bin.items.stream())
+                .distinct()  // Ensure no duplicate item calculations
+                .mapToInt(Item::getSize)
+                .sum();
+
+        if (totalItemWeight != totalBinWeight) {
+            System.out.println(ANSI_RED + "Warning: Weight discrepancy detected after " + stage + ". " +
+                    "Total item weight: " + totalItemWeight + ", Total bin weight: " + totalBinWeight + ANSI_RESET);
+        }
+    }
+
+
 
 
     // ANSI color code declarations
     public static final String ANSI_RESET = "\u001B[0m";
     public static final String ANSI_YELLOW = "\u001B[33m";
     public static final String ANSI_GREEN = "\u001B[32m";
+    public static final String ANSI_RED = "\u001B[31m";
 
     // Method for printing colored text to the console
     private static void printColored(String text, String colorCode) {
