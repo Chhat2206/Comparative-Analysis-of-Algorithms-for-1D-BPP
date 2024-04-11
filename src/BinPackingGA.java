@@ -148,33 +148,6 @@ public class BinPackingGA {
         return bestCombination;
     }
 
-
-    private static int calculateTotalSize(List<Item> items) {
-        int totalSize = 0;
-        for (Item item : items) {
-            totalSize += item.size;
-        }
-        return totalSize;
-    }
-
-    private static List<List<Item>> generateAllCombinations(List<Item> items) {
-        List<List<Item>> combinations = new ArrayList<>();
-        // Base case: adding empty list
-        combinations.add(new ArrayList<>());
-
-        for (Item item : items) {
-            List<List<Item>> newCombinations = new ArrayList<>();
-            for (List<Item> current : combinations) {
-                List<Item> newCombination = new ArrayList<>(current);
-                newCombination.add(item);
-                newCombinations.add(newCombination);
-            }
-            combinations.addAll(newCombinations);
-        }
-        return combinations;
-    }
-
-
     private static void updateTempSetT(Set<Item> tempSetT, List<Item> newItems, Bin bin) {
         tempSetT.removeAll(newItems);
         tempSetT.addAll(bin.items);
@@ -210,10 +183,12 @@ public class BinPackingGA {
     }
 
 
-    // mutation function goes wild at 100 population size and 50 generation size
     private static void mutate(Individual individual, int binCapacity) {
-        // Step 1: Select a few bins at random
-        List<Bin> selectedBins = selectRandomBinsForMutation(individual, 2); // Selecting 2 bins for mutation
+        // Make a deep copy of the original bins before mutation
+        List<Bin> originalBins = deepCopyBins(individual.bins);
+
+        // Step 1: Select a subset of bins at random for mutation
+        List<Bin> selectedBins = selectRandomBinsForMutation(individual, 2);
         Set<Item> temporaryItems = new HashSet<>();
 
         // Extract items from selected bins
@@ -222,56 +197,55 @@ public class BinPackingGA {
             bin.items.clear(); // Clear the items in the selected bin
         }
 
-        // Step 2: Attempt to re-distribute items from temporary set back into bins
-        redistributeItems(individual, temporaryItems, binCapacity);
+        // Step 2: Shuffle the items for randomness
+        List<Item> shuffledItems = new ArrayList<>(temporaryItems);
+        Collections.shuffle(shuffledItems);
 
-        // Step 3: Reinsert any remaining items using FF-like strategy
-        for (Item item : temporaryItems) {
-            boolean placed = false;
-            for (Bin bin : individual.bins) {
-                if (bin.canAddItem(item, binCapacity)) {
-                    bin.addItem(item);
-                    placed = true;
-                    break;
+        // Step 3: Attempt to reorganize items back into the selected bins
+        for (Item item : shuffledItems) {
+            Optional<Bin> suitableBin = selectedBins.stream()
+                    .filter(bin -> bin.canAddItem(item, binCapacity))
+                    .findFirst();
+
+            if (suitableBin.isPresent()) {
+                suitableBin.get().addItem(item);
+            } else {
+                // If the item doesn't fit in any of the selected bins, add it back to its original bin
+                Bin originalBin = findBinForItem(item, originalBins);
+                if (originalBin != null) {
+                    originalBin.addItem(item);
+                } else {
+                    // Place the item in a new bin if it doesn't fit anywhere else
+                    Bin newBin = new Bin();
+                    newBin.addItem(item);
+                    individual.bins.add(newBin);
                 }
-            }
-            if (!placed) {
-                Bin newBin = new Bin();
-                newBin.addItem(item);
-                individual.bins.add(newBin);
             }
         }
     }
 
-    private static void redistributeItems(Individual individual, Set<Item> items, int binCapacity) {
-        for (Item item : new HashSet<>(items)) { // Use a new HashSet to avoid concurrent modification
-            Bin bestFitBin = null;
-            int minSpaceLeft = Integer.MAX_VALUE;
-
-            // Find the bin that would have the least space left after adding this item
-            for (Bin bin : individual.bins) {
-                int spaceLeft = binCapacity - bin.getCurrentSize();
-                if (spaceLeft >= item.size && spaceLeft < minSpaceLeft) {
-                    bestFitBin = bin;
-                    minSpaceLeft = spaceLeft;
-                }
-            }
-
-            // Place the item in the best-fit bin, if found
-            if (bestFitBin != null) {
-                bestFitBin.addItem(item);
-                items.remove(item); // Remove the item from the temporary set
+    private static Bin findBinForItem(Item item, List<Bin> bins) {
+        // Find the bin where this item was located before the mutation
+        for (Bin bin : bins) {
+            if (bin.items.contains(item)) {
+                return bin;
             }
         }
+        return null; // Return null if the item is not found in any bin
     }
 
+    private static List<Bin> deepCopyBins(List<Bin> bins) {
+        // Deep copy each bin and its items
+        return bins.stream()
+                .map(bin -> new Bin(new ArrayList<>(bin.items)))
+                .collect(Collectors.toList());
+    }
 
     private static List<Bin> selectRandomBinsForMutation(Individual individual, int numBins) {
         List<Bin> bins = new ArrayList<>(individual.bins);
         Collections.shuffle(bins);
         return bins.subList(0, Math.min(numBins, bins.size()));
     }
-
 
     private static Map<String, List<Item>> loadItems(String fileName) throws FileNotFoundException {
         Map<String, List<Item>> testCases = new HashMap<>();
