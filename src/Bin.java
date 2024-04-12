@@ -8,24 +8,20 @@ public class Bin {
         this.items = new ArrayList<>();
     }
 
-    // Add a constructor that accepts a list of items
     public Bin(List<Item> items) {
-        this.items = new ArrayList<>(items); // Create a new list based on the passed items
+        this.items = new ArrayList<>(items);
     }
 
     public void addItem(Item item) {
-        items.add(item);
-    }
-
-    public int getCurrentSize() {
-        return items.stream().mapToInt(i -> i.size).sum();
+        this.items.add(item);
     }
 
     public boolean canAddItem(Item item, int binCapacity) {
-        return getCurrentSize() + item.size <= binCapacity;
+        int currentSize = items.stream().mapToInt(Item::getSize).sum();
+        return currentSize + item.getSize() <= binCapacity;
     }
 
-    public boolean isEmpty() {
-        return items.isEmpty();
+    public int getCurrentSize() {
+        return items.stream().mapToInt(Item::getSize).sum();
     }
 }

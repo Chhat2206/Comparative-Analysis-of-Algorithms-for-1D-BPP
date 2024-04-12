@@ -4,6 +4,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public class BinPackingGA {
+
     // Constants
     private static final int POPULATION_SIZE = 1000;
     // n set between 50 and 1000. Smaller problems might work well with 50-100, while larger,
@@ -14,7 +15,7 @@ public class BinPackingGA {
     // Can range from tens to thousands,
     // More generations allow more time for the algorithm to evolve solutions but increase computation time.
     // Stop the algorithm if no significant improvement is observed over several generations.
-    private static final Random random = new Random(); // Random number generator
+    private static final Random random = new Random(); // Random number generator + MAY BE THE ISSUE
     private static final int BIN_CAPACITY = 10000; // The capacity of each bin
     private static final int OFFSPRING_SIZE = 500;
     // A larger population size allows for more exploration but also increases computational complexity. 500 individuals is a reasonable size for many problems
@@ -333,7 +334,6 @@ public class BinPackingGA {
         population.clear();
         population.addAll(elites);
         population.addAll(combinedGroup.stream()
-                .distinct() // Avoid duplicating elites
                 .limit(POPULATION_SIZE - ELITISM_SIZE)
                 .collect(Collectors.toList()));
     }
@@ -418,11 +418,11 @@ public class BinPackingGA {
             // Calculate and print the total weight of all items
             int totalWeightOfAllItems = items.stream().mapToInt(item -> item.size).sum();
             System.out.println("Total weight in bins for " + testCaseName + ": " + totalWeightInBins);
-            System.out.println("Total weight of all items in " + testCaseName + ": " + totalWeightOfAllItems);
+            System.out.println("Total weight of all items in " + testCaseName + ": " + totalWeightOfAllItems + ANSI_BLUE);
 
             // Check if total weights match
             if(totalWeightOfAllItems != totalWeightInBins){
-                System.out.println("Warning: There is a discrepancy in the total weights for " + testCaseName);
+                System.out.println("Warning: There is a discrepancy in the total weights for " + testCaseName + ANSI_RED);
             }
             long endTime = System.currentTimeMillis(); // End timer
             double totalTime = endTime - startTime; // Calculate total time
@@ -438,24 +438,23 @@ public class BinPackingGA {
         int totalBinWeight = population.stream()
                 .flatMap(individual -> individual.bins.stream())
                 .flatMap(bin -> bin.items.stream())
-                .distinct()  // Ensure no duplicate item calculations
+                .distinct()
                 .mapToInt(Item::getSize)
                 .sum();
 
         if (totalItemWeight != totalBinWeight) {
             System.out.println(ANSI_RED + "Warning: Weight discrepancy detected after " + stage + ". " +
                     "Total item weight: " + totalItemWeight + ", Total bin weight: " + totalBinWeight + ANSI_RESET);
+
         }
     }
-
-
-
 
     // ANSI color code declarations
     public static final String ANSI_RESET = "\u001B[0m";
     public static final String ANSI_YELLOW = "\u001B[33m";
     public static final String ANSI_GREEN = "\u001B[32m";
     public static final String ANSI_RED = "\u001B[31m";
+    public static final String ANSI_BLUE = "\u001B[34m";
 
     // Method for printing colored text to the console
     private static void printColored(String text, String colorCode) {
