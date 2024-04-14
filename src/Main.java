@@ -28,7 +28,7 @@ public class Main {
             }
 
             // Solve the bin packing problem using Best Fit algorithm
-            List<List<Integer>> bins = BestFit.applyBestFit(weights, quantities, binCapacity);
+            List<List<Integer>> bins = FirstFit.applyFirstFitDecreasing(weights, quantities, binCapacity);
 
             // Calculate the total weight of items in bins
             int totalWeightInBins = bins.stream()

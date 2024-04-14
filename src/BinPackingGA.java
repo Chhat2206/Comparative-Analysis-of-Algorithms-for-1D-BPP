@@ -4,7 +4,6 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public class BinPackingGA {
-
     // Constants
     private static final int POPULATION_SIZE = 1000;
     // n set between 50 and 1000. Smaller problems might work well with 50-100, while larger,
@@ -36,6 +35,11 @@ public class BinPackingGA {
     private static final int TOURNAMENT_SIZE = 5;
     private static final int ELITISM_SIZE = 2;
 
+    // This method is responsible for creating the initial population of solutions for the genetic algorithm.
+    // Creates an empty list to hold the population of individuals.
+    // Loops over the number of individuals to be generated (specified by populationSize).
+    // Shuffles the items - It takes a list of original items, creates a copy, and then shuffles this copy randomly. This step is crucial as it introduces randomness in the initial solutions, promoting genetic diversity from the outset.
+    // Generates an individual - For each shuffled list of items, it calls the generateIndividualUsingFF method to create a new individual based on the First-Fit heuristic.
     private static List<Individual> generateInitialPopulation(List<Item> originalItems, int binCapacity, int populationSize) {
         List<Individual> population = new ArrayList<>();
 
@@ -48,8 +52,13 @@ public class BinPackingGA {
         return population;
     }
 
-
-    // First-Fit procedure
+    // This method implements the First-Fit algorithm, which is used to place items into bins. Here's the step-by-step process:
+    // Initializes an empty list of bins.
+    // Iterates over each item in the shuffled list:
+    //   It checks if there is an existing bin that can accommodate the item without exceeding the bin's capacity.
+    //   If such a bin exists, the item is added to the first suitable bin found.
+    //   If no suitable bin is found, a new bin is created, and the item is added to this new bin.
+    // Returns an individual - An individual, represented by the list of bins (each containing a set of items), is returned. This individual is a solution to the bin packing problem under the First-Fit strategy.
     private static Individual generateIndividualUsingFF(List<Item> items, int binCapacity) {
         List<Bin> bins = new ArrayList<>();
         for (Item item : items) {
@@ -70,36 +79,121 @@ public class BinPackingGA {
 
     private static Individual crossover(Individual parent1, Individual parent2, int binCapacity) {
         List<Bin> offspringBins = new ArrayList<>();
-        Set<Item> tempSetT = new HashSet<>();
+        Set<Item> includedItems = new HashSet<>();
 
-        // Step 1: Select bins from parent1
+        // Randomly select bins from parent1 and preserve their item sets.
         for (Bin bin : parent1.bins) {
             if (random.nextBoolean()) {
                 offspringBins.add(new Bin(new ArrayList<>(bin.items)));
-                tempSetT.addAll(bin.items);
+                includedItems.addAll(bin.items);
             }
         }
 
-        // Step 2: Copy non-conflicting bins from parent2
+        // Add non-conflicting bins from parent2, ensuring item sets are preserved.
         for (Bin bin : parent2.bins) {
-            if (Collections.disjoint(bin.items, tempSetT)) {
+            if (Collections.disjoint(bin.items, includedItems)) {
                 offspringBins.add(new Bin(new ArrayList<>(bin.items)));
-            } else {
-                tempSetT.addAll(bin.items);
+                includedItems.addAll(bin.items);
             }
         }
 
-        // Step 3: Replacement procedure
-        replaceItemsInOffspringBins(offspringBins, tempSetT, binCapacity);
-
-        // Step 4: First-Fit for remaining items in T
-        applyFirstFitProcedure(offspringBins, tempSetT, binCapacity);
-
-        // Step 5: Modified Best-Fit Slack (assuming its logic is similar to Best-Fit)
-        applyModifiedBestFitSlack(offspringBins, tempSetT, binCapacity);
+        // Handle remaining items: identify missing items and reintegrate using designed heuristic methods.
+        Set<Item> allItems = getAllItems(parent1, parent2);
+        allItems.removeAll(includedItems);
+        reintegrateItems(offspringBins, allItems, binCapacity);
 
         return new Individual(offspringBins);
     }
+
+    private static void reintegrateItems(List<Bin> bins, Set<Item> remainingItems, int binCapacity) {
+        // First-Fit Decrease: Attempt to place remaining items using a first-fit heuristic
+        applyFirstFitDecreasing(bins, remainingItems, binCapacity);
+
+        // Best-Fit: Attempt to optimize placement by minimizing the slack in bins
+        applyBestFitHeuristic(bins, remainingItems, binCapacity);
+    }
+
+    private static void applyBestFitHeuristic(List<Bin> bins, Set<Item> items, int binCapacity) {
+        for (Item item : new ArrayList<>(items)) {
+            Bin bestFitBin = null;
+            int minSpaceLeft = Integer.MAX_VALUE;
+
+            for (Bin bin : bins) {
+                int spaceLeft = binCapacity - bin.getCurrentSize();
+                if (spaceLeft >= item.size && spaceLeft < minSpaceLeft) {
+                    bestFitBin = bin;
+                    minSpaceLeft = spaceLeft;
+                }
+            }
+
+            if (bestFitBin != null) {
+                bestFitBin.addItem(item);
+                items.remove(item);
+            } else {
+                Bin newBin = new Bin();
+                newBin.addItem(item);
+                bins.add(newBin);
+            }
+        }
+    }
+
+
+    private static Set<Item> extractItems(List<Bin> binsForMutation) {
+        Set<Item> extractedItems = new HashSet<>();
+        for (Bin bin : binsForMutation) {
+            extractedItems.addAll(bin.items);
+            bin.items.clear();  // Clear the items from the bin after extraction
+        }
+        return extractedItems;
+    }
+
+    private static Set<Item> getAllItems(Individual parent1, Individual parent2) {
+        Set<Item> allItems = new HashSet<>();
+        for (Bin bin : parent1.bins) {
+            allItems.addAll(bin.items);
+        }
+        for (Bin bin : parent2.bins) {
+            allItems.addAll(bin.items);
+        }
+        return allItems;
+    }
+
+
+    private static void redistributeItems(Individual individual, Set<Item> items, int binCapacity) {
+        List<Item> itemList = new ArrayList<>(items);
+        Collections.shuffle(itemList);  // Shuffle to introduce randomness
+        for (Item item : itemList) {
+            addOrNewBin(individual.bins, item, binCapacity);  // Add item to a bin or create a new one
+        }
+    }
+
+    private static void applyTwoPhaseProcedure(List<Bin> bins, Set<Item> items, int binCapacity) {
+        // First phase: Try to fit items using a best-fit approach
+        for (Item item : new ArrayList<>(items)) {
+            Bin bestFitBin = findBestFitBin(bins, item, binCapacity);
+            if (bestFitBin != null) {
+                bestFitBin.addItem(item);
+                items.remove(item);
+            }
+        }
+
+        // Second phase: Any remaining items should be added to new bins
+        for (Item item : items) {
+            Bin newBin = new Bin();
+            newBin.addItem(item);
+            bins.add(newBin);
+        }
+    }
+
+    private static void replaceWorstWithOffspring(List<Individual> population, Individual offspring) {
+        // Sort population based on fitness and replace the least fit with offspring
+        population.sort(Comparator.comparingInt(Individual::getFitness));  // Assume fitness is already calculated to reflect quality
+        if (offspring.getFitness() > population.get(0).getFitness()) {  // Assuming higher fitness is better
+            population.set(0, offspring);  // Replace the worst individual
+        }
+    }
+
+
 
     private static void applyFirstFitProcedure(List<Bin> bins, Set<Item> items, int binCapacity) {
         for (Item item : items) {
@@ -119,21 +213,30 @@ public class BinPackingGA {
         }
     }
 
-    private static void replaceItemsInOffspringBins(List<Bin> offspringBins, Set<Item> tempSetT, int binCapacity) {
-        for (Bin bin : offspringBins) {
-            // Find the best replacement combination from tempSetT
-            List<Item> bestReplacement = findBestReplacement(bin, tempSetT, binCapacity);
+    private static void applyFirstFitDecreasing(List<Bin> bins, Set<Item> items, int binCapacity) {
+        // Sort items by decreasing size
+        List<Item> sortedItems = new ArrayList<>(items);
+        sortedItems.sort(Comparator.comparing(Item::getSize).reversed());
 
-            // Perform the replacement if a better combination is found
-            if (!bestReplacement.isEmpty()) {
-                bin.items.clear();
-                bin.items.addAll(bestReplacement);
-
-                // Update tempSetT by removing used items and adding back items removed from the bin
-                updateTempSetT(tempSetT, bestReplacement, bin);
-            }
+        // Apply First-Fit logic
+        for (Item item : sortedItems) {
+            addOrNewBin(bins, item, binCapacity);
         }
     }
+
+    private static void addOrNewBin(List<Bin> bins, Item item, int binCapacity) {
+        for (Bin bin : bins) {
+            if (bin.canAddItem(item, binCapacity)) {
+                bin.addItem(item);
+                return;
+            }
+        }
+        Bin newBin = new Bin();
+        newBin.addItem(item);
+        bins.add(newBin);
+    }
+
+
 
     private static List<Item> findBestReplacement(Bin bin, Set<Item> tempSetT, int binCapacity) {
         List<Item> bestCombination = new ArrayList<>();
@@ -185,35 +288,17 @@ public class BinPackingGA {
 
 
     private static void mutate(Individual individual, int binCapacity) {
-        // Select bins randomly for mutation and extract items
-        List<Bin> selectedBins = selectRandomBinsForMutation(individual, 2);
-        Set<Item> temporaryItems = new HashSet<>();
-        for (Bin bin : selectedBins) {
-            temporaryItems.addAll(bin.items);
-            bin.items.clear();
-        }
+        List<Bin> binsForMutation = selectRandomBinsForMutation(individual, 2);
+        Set<Item> temporaryItems = extractItems(binsForMutation);
 
-        // Shuffle and redistribute items
-        List<Item> shuffledItems = new ArrayList<>(temporaryItems);
-        Collections.shuffle(shuffledItems);
-        for (Item item : shuffledItems) {
-            boolean placed = false;
-            for (Bin bin : individual.bins) {
-                if (bin.canAddItem(item, binCapacity)) {
-                    bin.addItem(item);
-                    placed = true;
-                    break;
-                }
-            }
-            // Return items to their original bin if not placed
-            if (!placed) {
-                findOriginalBinForItem(item, individual).addItem(item);
-            }
-        }
+        Collections.shuffle(new ArrayList<>(temporaryItems));  // Introduce randomness
+        redistributeItems(individual, temporaryItems, binCapacity);
 
-        // Check if all items are placed and handle any missing items
-        handleMissingItems(individual, temporaryItems, binCapacity);
+        // Attempt local optimization after mutation
+        applyBestFitHeuristic(individual.bins, temporaryItems, binCapacity);
     }
+
+
 
     private static void handleMissingItems(Individual individual, Set<Item> allItems, int binCapacity) {
         Set<Item> placedItems = individual.bins.stream()
@@ -298,45 +383,21 @@ public class BinPackingGA {
     }
 
     private static void selectionUsingMGG(List<Individual> population, int offspringSize, int binCapacity) {
-        // Select elites for preservation
-        List<Individual> elites = getElites(population, ELITISM_SIZE);
+        while (offspringSize > 0) {
+            // Select two parents randomly
+            Individual parent1 = population.get(random.nextInt(population.size()));
+            Individual parent2 = population.get(random.nextInt(population.size()));
 
-        // Generate offspring
-        List<Individual> offspring = IntStream.range(0, offspringSize)
-                .mapToObj(i -> {
-                    // Use tournament selection to pick parents
-                    Individual parent1 = tournamentSelection(population);
-                    Individual parent2 = tournamentSelection(population);
+            // Generate offspring
+            Individual offspring = crossover(parent1, parent2, binCapacity);
+            mutate(offspring, binCapacity);
 
-                    // Perform crossover or simply copy a parent based on probability
-                    if (random.nextDouble() < CROSSOVER_PROBABILITY) {
-                        return crossover(parent1, parent2, binCapacity);
-                    } else {
-                        return random.nextBoolean() ? new Individual(new ArrayList<>(parent1.bins))
-                                : new Individual(new ArrayList<>(parent2.bins));
-                    }
-                })
-                .collect(Collectors.toList());
-
-        // Apply mutation to the offspring
-        offspring.forEach(individual -> {
-            if (random.nextDouble() < MUTATION_RATE) {
-                mutate(individual, binCapacity);
-            }
-        });
-
-        // Combine the current population and offspring
-        List<Individual> combinedGroup = new ArrayList<>(population);
-        combinedGroup.addAll(offspring);
-
-        // Sort by fitness and replace the population with the best individuals, preserving elites
-        combinedGroup.sort(Comparator.comparing(Individual::getFitness));
-        population.clear();
-        population.addAll(elites);
-        population.addAll(combinedGroup.stream()
-                .limit(POPULATION_SIZE - ELITISM_SIZE)
-                .collect(Collectors.toList()));
+            // Replace worst individuals with new offspring if better
+            replaceWorstWithOffspring(population, offspring);
+            offspringSize--;
+        }
     }
+
 
 
     // Methods for elitism
