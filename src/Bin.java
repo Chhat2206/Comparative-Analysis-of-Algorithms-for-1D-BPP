@@ -24,4 +24,15 @@ public class Bin {
     public int getCurrentSize() {
         return items.stream().mapToInt(Item::getSize).sum();
     }
+
+    // Method to create a deep copy of a Bin
+    public Bin copy() {
+        // Create a new bin and deep copy each item into the new bin
+        Bin newBin = new Bin();
+        for (Item item : this.items) {
+            // Assuming Item has a proper copy constructor or method
+            newBin.addItem(new Item(item.getSize()));  // Deep copy the items
+        }
+        return newBin;
+    }
 }

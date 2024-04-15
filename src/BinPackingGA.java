@@ -25,15 +25,6 @@ public class BinPackingGA {
     // A higher rate can prevent premature convergence to local optima by introducing diversity,
     // but too high a rate can turn the search into a random walk.
 
-    private static final double CROSSOVER_PROBABILITY = 0.7;
-    //The probability of crossover (mating) between individuals.
-    //Typically set between 0.6 and 0.9.
-    //Tweaking: Higher rates increase genetic diversity but might disrupt convergence.
-
-    // Adjust initial population generation method
-
-    private static final int TOURNAMENT_SIZE = 5;
-    private static final int ELITISM_SIZE = 2;
 
     // This method is responsible for creating the initial population of solutions for the genetic algorithm.
     // Creates an empty list to hold the population of individuals.
@@ -42,15 +33,20 @@ public class BinPackingGA {
     // Generates an individual - For each shuffled list of items, it calls the generateIndividualUsingFF method to create a new individual based on the First-Fit heuristic.
     private static List<Individual> generateInitialPopulation(List<Item> originalItems, int binCapacity, int populationSize) {
         List<Individual> population = new ArrayList<>();
-
-        for (int i = 0; i < populationSize; i++) {
+        // Random initialization for diversity
+        for (int i = 0; i < populationSize / 2; i++) {
             List<Item> items = new ArrayList<>(originalItems);
-            Collections.shuffle(items);  // Randomly shuffle the items
+            Collections.shuffle(items);
             population.add(generateIndividualUsingFF(items, binCapacity));
         }
-
+        // Heuristic-based initialization for quality
+        originalItems.sort(Comparator.comparing(Item::getSize).reversed());
+        for (int i = populationSize / 2; i < populationSize; i++) {
+            population.add(generateIndividualUsingFF(new ArrayList<>(originalItems), binCapacity));
+        }
         return population;
     }
+
 
     // This method implements the First-Fit algorithm, which is used to place items into bins. Here's the step-by-step process:
     // Initializes an empty list of bins.
@@ -81,36 +77,65 @@ public class BinPackingGA {
         List<Bin> offspringBins = new ArrayList<>();
         Set<Item> includedItems = new HashSet<>();
 
-        // Randomly select bins from parent1 and preserve their item sets.
-        for (Bin bin : parent1.bins) {
-            if (random.nextBoolean()) {
-                offspringBins.add(new Bin(new ArrayList<>(bin.items)));
-                includedItems.addAll(bin.items);
-            }
-        }
+        // Copy bins from both parents while avoiding item duplication
+        copyBinsFromParent(offspringBins, includedItems, parent1, binCapacity, true);
+        copyBinsFromParent(offspringBins, includedItems, parent2, binCapacity, false);
 
-        // Add non-conflicting bins from parent2, ensuring item sets are preserved.
-        for (Bin bin : parent2.bins) {
-            if (Collections.disjoint(bin.items, includedItems)) {
-                offspringBins.add(new Bin(new ArrayList<>(bin.items)));
-                includedItems.addAll(bin.items);
-            }
-        }
-
-        // Handle remaining items: identify missing items and reintegrate using designed heuristic methods.
-        Set<Item> allItems = getAllItems(parent1, parent2);
-        allItems.removeAll(includedItems);
-        reintegrateItems(offspringBins, allItems, binCapacity);
+        // Reintegrate remaining items using advanced local optimizations
+        reintegrateRemainingItemsAdvanced(offspringBins, parent1, parent2, includedItems, binCapacity);
 
         return new Individual(offspringBins);
     }
 
-    private static void reintegrateItems(List<Bin> bins, Set<Item> remainingItems, int binCapacity) {
-        // First-Fit Decrease: Attempt to place remaining items using a first-fit heuristic
-        applyFirstFitDecreasing(bins, remainingItems, binCapacity);
+    private static void copyBinsFromParent(List<Bin> offspringBins, Set<Item> includedItems, Individual parent, int binCapacity, boolean isParent1) {
+        for (Bin bin : parent.bins) {
+            if (isParent1 || bin.items.stream().noneMatch(includedItems::contains)) {
+                Bin copiedBin = bin.copy();
+                offspringBins.add(copiedBin);
+                includedItems.addAll(copiedBin.items);
+            }
+        }
+    }
 
-        // Best-Fit: Attempt to optimize placement by minimizing the slack in bins
-        applyBestFitHeuristic(bins, remainingItems, binCapacity);
+    private static void reintegrateRemainingItemsAdvanced(List<Bin> offspringBins, Individual parent1, Individual parent2, Set<Item> includedItems, int binCapacity) {
+        Set<Item> remainingItems = new HashSet<>(getAllItems(parent1, parent2));
+        remainingItems.removeAll(includedItems);
+
+        // Sort items by size in descending order for better packing
+        List<Item> sortedItems = new ArrayList<>(remainingItems);
+        sortedItems.sort(Comparator.comparingInt(Item::getSize).reversed());
+
+        // Attempt to place remaining items optimally
+        for (Item item : sortedItems) {
+            Bin bestFitBin = findBestFitBin(offspringBins, item, binCapacity);
+            if (bestFitBin != null) {
+                bestFitBin.addItem(item);
+            } else {
+                Bin newBin = new Bin();
+                newBin.addItem(item);
+                offspringBins.add(newBin);
+            }
+        }
+    }
+
+    private static Set<Item> getAllItems(Individual parent1, Individual parent2) {
+        Set<Item> allItems = new HashSet<>();
+        for (Bin bin : parent1.bins) allItems.addAll(bin.items);
+        for (Bin bin : parent2.bins) allItems.addAll(bin.items);
+        return allItems;
+    }
+
+    private static Bin findBestFitBin(List<Bin> bins, Item item, int binCapacity) {
+        Bin bestFitBin = null;
+        int minSpaceLeft = Integer.MAX_VALUE;
+        for (Bin bin : bins) {
+            int spaceLeft = binCapacity - bin.getCurrentSize();
+            if (spaceLeft >= item.getSize() && spaceLeft < minSpaceLeft) {
+                bestFitBin = bin;
+                minSpaceLeft = spaceLeft;
+            }
+        }
+        return bestFitBin;
     }
 
     private static void applyBestFitHeuristic(List<Bin> bins, Set<Item> items, int binCapacity) {
@@ -147,17 +172,6 @@ public class BinPackingGA {
         return extractedItems;
     }
 
-    private static Set<Item> getAllItems(Individual parent1, Individual parent2) {
-        Set<Item> allItems = new HashSet<>();
-        for (Bin bin : parent1.bins) {
-            allItems.addAll(bin.items);
-        }
-        for (Bin bin : parent2.bins) {
-            allItems.addAll(bin.items);
-        }
-        return allItems;
-    }
-
 
     private static void redistributeItems(Individual individual, Set<Item> items, int binCapacity) {
         List<Item> itemList = new ArrayList<>(items);
@@ -167,60 +181,12 @@ public class BinPackingGA {
         }
     }
 
-    private static void applyTwoPhaseProcedure(List<Bin> bins, Set<Item> items, int binCapacity) {
-        // First phase: Try to fit items using a best-fit approach
-        for (Item item : new ArrayList<>(items)) {
-            Bin bestFitBin = findBestFitBin(bins, item, binCapacity);
-            if (bestFitBin != null) {
-                bestFitBin.addItem(item);
-                items.remove(item);
-            }
-        }
-
-        // Second phase: Any remaining items should be added to new bins
-        for (Item item : items) {
-            Bin newBin = new Bin();
-            newBin.addItem(item);
-            bins.add(newBin);
-        }
-    }
 
     private static void replaceWorstWithOffspring(List<Individual> population, Individual offspring) {
         // Sort population based on fitness and replace the least fit with offspring
         population.sort(Comparator.comparingInt(Individual::getFitness));  // Assume fitness is already calculated to reflect quality
         if (offspring.getFitness() > population.get(0).getFitness()) {  // Assuming higher fitness is better
             population.set(0, offspring);  // Replace the worst individual
-        }
-    }
-
-
-
-    private static void applyFirstFitProcedure(List<Bin> bins, Set<Item> items, int binCapacity) {
-        for (Item item : items) {
-            boolean placed = false;
-            for (Bin bin : bins) {
-                if (bin.canAddItem(item, binCapacity)) {
-                    bin.addItem(item);
-                    placed = true;
-                    break;
-                }
-            }
-            if (!placed) {
-                Bin newBin = new Bin();
-                newBin.addItem(item);
-                bins.add(newBin);
-            }
-        }
-    }
-
-    private static void applyFirstFitDecreasing(List<Bin> bins, Set<Item> items, int binCapacity) {
-        // Sort items by decreasing size
-        List<Item> sortedItems = new ArrayList<>(items);
-        sortedItems.sort(Comparator.comparing(Item::getSize).reversed());
-
-        // Apply First-Fit logic
-        for (Item item : sortedItems) {
-            addOrNewBin(bins, item, binCapacity);
         }
     }
 
@@ -236,59 +202,11 @@ public class BinPackingGA {
         bins.add(newBin);
     }
 
-
-
-    private static List<Item> findBestReplacement(Bin bin, Set<Item> tempSetT, int binCapacity) {
-        List<Item> bestCombination = new ArrayList<>();
-        int currentSize = 0;
-
-        for (Item item : tempSetT) {
-            if (currentSize + item.size <= binCapacity) {
-                bestCombination.add(item);
-                currentSize += item.size;
-            }
-        }
-
-        return bestCombination;
-    }
-
-    private static void updateTempSetT(Set<Item> tempSetT, List<Item> newItems, Bin bin) {
-        tempSetT.removeAll(newItems);
-        tempSetT.addAll(bin.items);
-    }
-
-    private static void applyModifiedBestFitSlack(List<Bin> bins, Set<Item> items, int binCapacity) {
-        for (Item item : new HashSet<>(items)) {
-            Bin bestFitBin = findBestFitBin(bins, item, binCapacity);
-            if (bestFitBin != null) {
-                bestFitBin.addItem(item);
-                items.remove(item);
-            } else {
-                // If no suitable bin found, create a new bin
-                Bin newBin = new Bin();
-                newBin.addItem(item);
-                bins.add(newBin);
-            }
-        }
-    }
-
-    private static Bin findBestFitBin(List<Bin> bins, Item item, int binCapacity) {
-        Bin bestFitBin = null;
-        int minSpaceLeft = Integer.MAX_VALUE;
-
-        for (Bin bin : bins) {
-            int spaceLeft = binCapacity - bin.getCurrentSize();
-            if (spaceLeft >= item.size && spaceLeft < minSpaceLeft) {
-                bestFitBin = bin;
-                minSpaceLeft = spaceLeft;
-            }
-        }
-        return bestFitBin;
-    }
-
-
     private static void mutate(Individual individual, int binCapacity) {
+        // First, two or three bins i n the parent are selected at random
         List<Bin> binsForMutation = selectRandomBinsForMutation(individual, 2);
+
+        // the items in the bins selected are copied to a temporary set T, individualIy, that is, as item sets con-taining a single item
         Set<Item> temporaryItems = extractItems(binsForMutation);
 
         Collections.shuffle(new ArrayList<>(temporaryItems));  // Introduce randomness
@@ -298,45 +216,6 @@ public class BinPackingGA {
         applyBestFitHeuristic(individual.bins, temporaryItems, binCapacity);
     }
 
-
-
-    private static void handleMissingItems(Individual individual, Set<Item> allItems, int binCapacity) {
-        Set<Item> placedItems = individual.bins.stream()
-                .flatMap(bin -> bin.items.stream())
-                .collect(Collectors.toSet());
-        allItems.removeAll(placedItems); // Remove items that are already placed
-
-        // Place remaining items in new or existing bins
-        for (Item item : allItems) {
-            boolean placed = false;
-            for (Bin bin : individual.bins) {
-                if (bin.canAddItem(item, binCapacity)) {
-                    bin.addItem(item);
-                    placed = true;
-                    break;
-                }
-            }
-            if (!placed) {
-                Bin newBin = new Bin();
-                newBin.addItem(item);
-                individual.bins.add(newBin);
-            }
-        }
-    }
-
-    private static Bin findOriginalBinForItem(Item item, Individual individual) {
-        // Find the original bin where this item was located before the mutation
-        return individual.bins.stream()
-                .filter(bin -> bin.items.contains(item))
-                .findFirst()
-                .orElseGet(() -> {
-                    // If the item is not found in any bin, create a new bin for it
-                    Bin newBin = new Bin();
-                    newBin.addItem(item);
-                    individual.bins.add(newBin);
-                    return newBin;
-                });
-    }
 
     private static List<Bin> selectRandomBinsForMutation(Individual individual, int numBins) {
         List<Bin> bins = new ArrayList<>(individual.bins);
@@ -370,17 +249,6 @@ public class BinPackingGA {
         return testCases;
     }
 
-    private static Individual tournamentSelection(List<Individual> population) {
-        List<Individual> tournament = new ArrayList<>();
-        for (int i = 0; i < TOURNAMENT_SIZE; i++) {
-            Individual randomIndividual = population.get(random.nextInt(population.size()));
-            tournament.add(randomIndividual);
-        }
-        return Collections.max(tournament, Comparator.comparing(Individual::getFitness));
-        // This line returns the best individual from the tournament, i.e., the one with the highest fitness value.
-        //Collections.max is a utility method that finds the maximum element of the given collection, according to the order induced by the specified comparator.
-        // In this case, the comparator is based on the fitness of the individuals (Individual::getFitness)
-    }
 
     private static void selectionUsingMGG(List<Individual> population, int offspringSize, int binCapacity) {
         while (offspringSize > 0) {
@@ -398,15 +266,6 @@ public class BinPackingGA {
         }
     }
 
-
-
-    // Methods for elitism
-    private static List<Individual> getElites(List<Individual> population, int numberOfElites) {
-        return population.stream()
-                .sorted(Comparator.comparing(Individual::getFitness).reversed())
-                .limit(numberOfElites)
-                .collect(Collectors.toList());
-    }
 
     private static Individual findBestSolution(List<Individual> population) {
         return Collections.max(population, Comparator.comparing(Individual::getFitness));
@@ -446,6 +305,14 @@ public class BinPackingGA {
             for (int i = 0; i < GENERATIONS; i++) {
                 // Apply MGG
                 selectionUsingMGG(population, OFFSPRING_SIZE, BIN_CAPACITY);
+
+                // Track and log metrics after selection
+                double avgFill = averageFillPercentage(population, BIN_CAPACITY);
+                int diversity = calculateDiversity(population);
+                int bestFitness = findBestSolution(population).getFitness();
+
+                System.out.println("Generation " + i + ": Avg Fill = " + avgFill + "%, Diversity = " + diversity + ", Best Fitness = " + bestFitness);
+
 
                 // Apply mutation to a portion of the population
                 for (int j = 0; j < population.size(); j++) {
@@ -492,6 +359,30 @@ public class BinPackingGA {
 
             System.out.println("\n");
         }
+    }
+
+    private static double averageFillPercentage(List<Individual> population, int binCapacity) {
+        double totalFill = 0;
+        int totalBins = 0;
+        for (Individual individual : population) {
+            for (Bin bin : individual.bins) {
+                totalFill += ((double) bin.getCurrentSize() / binCapacity);
+                totalBins++;
+            }
+        }
+        return totalBins > 0 ? (totalFill / totalBins) * 100 : 0;
+    }
+    private static int calculateDiversity(List<Individual> population) {
+        Set<String> uniqueConfigurations = new HashSet<>();
+        for (Individual individual : population) {
+            StringBuilder config = new StringBuilder();
+            for (Bin bin : individual.bins) {
+                List<Integer> items = bin.items.stream().map(Item::getSize).sorted().collect(Collectors.toList());
+                config.append(items.toString());
+            }
+            uniqueConfigurations.add(config.toString());
+        }
+        return uniqueConfigurations.size();
     }
 
     private static void validateAndLogBinWeights(List<Individual> population, List<Item> allItems, String stage) {
