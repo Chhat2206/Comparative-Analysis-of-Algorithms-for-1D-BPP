@@ -125,61 +125,103 @@ public class BinPackingGA {
         return new Individual(bins);
     }
 
-    private static Individual crossover(Individual parent1, Individual parent2, int binCapacity) {
+    private static Individual crossover(Individual parent1, Individual parent2, int binCapacity, String heuristicType) {
         List<Bin> offspringBins = new ArrayList<>();
         Set<Item> includedItems = new HashSet<>();
 
-        // Copy non-duplicate bins from Parent1
-        for (Bin bin : parent1.bins) {
-            Bin newBin = new Bin();
-            for (Item item : bin.items) {
-                if (includedItems.add(item)) {  // Only add if item not already included
-                    newBin.addItem(item);
-                }
-            }
-            if (!newBin.items.isEmpty()) {
-                offspringBins.add(newBin);
-            }
-        }
+        // Assuming you have a method to add items from parent to offspring while recording included items
+        addItemsFromParent(parent1, offspringBins, includedItems, binCapacity);
+        addItemsFromParent(parent2, offspringBins, includedItems, binCapacity);
 
-        // Fill in missing items from Parent2
-        for (Bin bin : parent2.bins) {
-            Bin newBin = new Bin();
-            for (Item item : bin.items) {
-                if (includedItems.add(item)) {  // Only add if item not already included
-                    newBin.addItem(item);
-                }
-            }
-            if (!newBin.items.isEmpty()) {
-                offspringBins.add(newBin);
-            }
-        }
+        // Calculate remaining items
+        Set<Item> allItems = getAllItemsFromBothParents(parent1, parent2);
+        allItems.removeAll(includedItems);  // Remaining items to be reintegrated
 
-        // Reintegrate remaining items using advanced local optimizations
-        reintegrateRemainingItemsAdvanced(offspringBins, parent1, parent2, includedItems, binCapacity);
+        // Use advanced heuristics to reintegrate remaining items
+        reintegrateItemsUsingAdvancedHeuristics(offspringBins, allItems, binCapacity, heuristicType);
+
         return new Individual(offspringBins);
     }
 
-    private static void reintegrateRemainingItemsAdvanced(List<Bin> offspringBins, Individual parent1, Individual parent2, Set<Item> includedItems, int binCapacity) {
-        Set<Item> remainingItems = new HashSet<>(getAllItems(parent1, parent2));
-        remainingItems.removeAll(includedItems);
-
-        // Sort items by size in descending order for better packing
-        List<Item> sortedItems = new ArrayList<>(remainingItems);
-        sortedItems.sort(Comparator.comparingInt(Item::getSize).reversed());
-
-        // Attempt to place remaining items optimally
-        for (Item item : sortedItems) {
-            Bin bestFitBin = findBestFitBin(offspringBins, item, binCapacity);
-            if (bestFitBin != null) {
-                bestFitBin.addItem(item);
-            } else {
-                Bin newBin = new Bin();
-                newBin.addItem(item);
+    private static void addItemsFromParent(Individual parent, List<Bin> offspringBins, Set<Item> includedItems, int binCapacity) {
+        for (Bin bin : parent.bins) {
+            Bin newBin = new Bin();
+            for (Item item : bin.items) {
+                if (includedItems.add(item)) {
+                    newBin.addItem(item);
+                }
+            }
+            if (!newBin.items.isEmpty()) {
                 offspringBins.add(newBin);
             }
         }
     }
+
+
+    private static Set<Item> getAllItemsFromBothParents(Individual parent1, Individual parent2) {
+        Set<Item> items = new HashSet<>();
+        for (Bin bin : parent1.bins) {
+            items.addAll(bin.items);
+        }
+        for (Bin bin : parent2.bins) {
+            items.addAll(bin.items);
+        }
+        return items;
+    }
+
+
+    private static void reintegrateItemsUsingAdvancedHeuristics(List<Bin> bins, Set<Item> remainingItems, int binCapacity, String heuristicType) {
+        // Sort items by size in descending order for more efficient packing
+        List<Item> sortedItems = new ArrayList<>(remainingItems);
+        sortedItems.sort((i1, i2) -> Integer.compare(i2.getSize(), i1.getSize()));
+
+        if (heuristicType.equals("Best-Fit")) {
+            // Best-Fit heuristic
+            for (Item item : sortedItems) {
+                Bin bestFitBin = null;
+                int minSpaceLeft = Integer.MAX_VALUE;
+
+                // Find the bin with the least slack that can accommodate the item
+                for (Bin bin : bins) {
+                    int spaceLeft = binCapacity - bin.getCurrentSize();
+                    if (spaceLeft >= item.getSize() && spaceLeft < minSpaceLeft) {
+                        bestFitBin = bin;
+                        minSpaceLeft = spaceLeft;
+                    }
+                }
+
+                // Place the item in the best-fit bin or a new bin if no suitable bin is found
+                if (bestFitBin != null) {
+                    bestFitBin.addItem(item);
+                } else {
+                    Bin newBin = new Bin();
+                    newBin.addItem(item);
+                    bins.add(newBin);
+                }
+            }
+        } else {
+            // First-Fit heuristic
+            for (Item item : sortedItems) {
+                boolean placed = false;
+                // Place the item in the first bin that has enough space
+                for (Bin bin : bins) {
+                    if (bin.canAddItem(item, binCapacity)) {
+                        bin.addItem(item);
+                        placed = true;
+                        break;
+                    }
+                }
+
+                // If no bin was found, create a new bin and place the item there
+                if (!placed) {
+                    Bin newBin = new Bin();
+                    newBin.addItem(item);
+                    bins.add(newBin);
+                }
+            }
+        }
+    }
+
 
     private static Set<Item> getAllItems(Individual parent1, Individual parent2) {
         Set<Item> allItems = new HashSet<>();
@@ -461,7 +503,7 @@ public class BinPackingGA {
             Individual parent2 = population.get(random.nextInt(population.size()));
 
             // Generate offspring
-            Individual offspring = crossover(parent1, parent2, binCapacity);
+            Individual offspring = crossover(parent1, parent2, binCapacity, "Best-Fit");
             mutate(offspring, binCapacity);
 
             // Replace worst individuals with new offspring if better
@@ -488,11 +530,25 @@ public class BinPackingGA {
 
     }
 
+    private static int totalItemWeight(List<Item> allItems) {
+        return allItems.stream().mapToInt(Item::getSize).sum();
+    }
+
     public static void main(String[] args) throws FileNotFoundException {
         long startTime = System.currentTimeMillis();
         System.out.println("Program started");
 
         Map<String, List<Item>> testCases = loadItems("src/BPP.txt");
+
+        for (Map.Entry<String, List<Item>> entry : testCases.entrySet()) {
+            String testCaseName = entry.getKey();
+            List<Item> allItems = new ArrayList<>(entry.getValue()); // Define allItems
+            List<Item> items = entry.getValue(); // Define items here
+
+            // Now you can use the 'items' variable
+            int totalItemWeight = allItems.stream().mapToInt(Item::getSize).sum();
+        }
+
 
         for (Map.Entry<String, List<Item>> entry : testCases.entrySet()) {
             String testCaseName = entry.getKey();
@@ -518,6 +574,12 @@ public class BinPackingGA {
 
                 System.out.println("Generation " + currentGeneration + ": Avg Fill = " + avgFill + "%, Diversity = " + diversity + ", Best Fitness = " + bestFitness);
 
+                int totalItemWeight = totalItemWeight(allItems);
+                // Check if fitness equals the maximum possible number of bins
+                if (bestFitness == -((totalItemWeight / BIN_CAPACITY)+1)) {
+                    System.out.println("Stopping criteria met. Fitness equals the minimum possible number of bins.");
+                    break; // Exit the loop if the stopping criteria is met
+                }
 
                 // Apply mutation to a portion of the population
                 for (int j = 0; j < population.size(); j++) {
