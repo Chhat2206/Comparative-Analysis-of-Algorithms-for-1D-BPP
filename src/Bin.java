@@ -29,13 +29,9 @@ public class Bin {
         return items.stream().mapToInt(Item::getSize).sum();
     }
 
-    public int getId() {
-        return id;  // Getter for bin ID
-    }
-
-    // Method to create a deep copy of a Bin
-    public Bin copy() {
-        return new Bin(new ArrayList<>(this.items));  // Use the constructor that accepts items
+    // Getter method to retrieve a copy of the items list
+    public List<Item> getItems() {
+        return new ArrayList<>(items);  // Return a copy of the items to protect the internal list
     }
 }
 
