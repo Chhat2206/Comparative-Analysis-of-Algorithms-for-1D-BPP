@@ -202,70 +202,66 @@ public class BinPackingGA {
     }
 
 
-    private static void integrateUsingBestFit(List<Bin> bins, Item item, int binCapacity) {
-        Bin bestFitBin = null;
-        int minSlack = Integer.MAX_VALUE;
-
-        // Find the bin with the minimum slack that can still accommodate the item
+    // Method to optimize filling of bins using a detailed replacement strategy
+    private static void optimizeBinFilling(List<Bin> bins, List<Item> allItems) {
         for (Bin bin : bins) {
-            int currentSlack = binCapacity - bin.getCurrentSize();
-            if (currentSlack >= item.getSize() && currentSlack - item.getSize() < minSlack) {
-                bestFitBin = bin;
-                minSlack = currentSlack - item.getSize();
-            }
-        }
+            int currentBinCapacity = bin.getCurrentSize();
+            int slack = BIN_CAPACITY - currentBinCapacity;
 
-        // Place the item in the best-fit bin according to the slack or create a new bin if no suitable bin is found
-        if (bestFitBin != null) {
-            bestFitBin.addItem(item);
-        } else {
-            Bin newBin = new Bin();
-            newBin.addItem(item);
-            bins.add(newBin);
-        }
-    }
+            List<Item> itemsInBin = new ArrayList<>(bin.getItems());
+            List<Item> itemsToRemove = new ArrayList<>();
+            List<Item> itemsToAdd = new ArrayList<>();
 
-    private static void integrateUsingFirstFit(List<Bin> bins, Item item, int binCapacity) {
-        boolean placed = false;
-        for (Bin bin : bins) {
-            if (bin.canAddItem(item, binCapacity)) {
-                bin.addItem(item);
-                placed = true;
-                break;
-            }
-        }
-        if (!placed) {
-            Bin newBin = new Bin();
-            newBin.addItem(item);
-            bins.add(newBin);
-        }
-    }
-
-    private static boolean shouldUseBestFit(List<Bin> bins, int binCapacity) {
-        // Example condition: use Best-Fit if average bin fullness is below 50%
-        double averageFullness = bins.stream()
-                .mapToDouble(bin -> bin.getCurrentSize() / (double) binCapacity)
-                .average().orElse(0.0);
-        return averageFullness < 0.5;
-    }
-
-
-    private static void addItemsFromParent(Individual parent, List<Bin> offspringBins, Set<Item> includedItems, int binCapacity) {
-        for (Bin bin : parent.bins) {
-            Bin newBin = new Bin();
-            for (Item item : bin.items) {
-                if (includedItems.add(item)) {
-                    newBin.addItem(item);
+            // Iterate over possible replacements and attempt to optimize bin fill
+            for (Item original : itemsInBin) {
+                int remainingSlack = BIN_CAPACITY - (currentBinCapacity - original.getSize());
+                Item bestReplacement = findBestReplacement(original, remainingSlack, allItems);
+                if (bestReplacement != null && !itemsInBin.contains(bestReplacement)) {
+                    itemsToRemove.add(original);
+                    itemsToAdd.add(bestReplacement);
+                    currentBinCapacity = currentBinCapacity - original.getSize() + bestReplacement.getSize();
                 }
             }
-            if (!newBin.items.isEmpty()) {
-                offspringBins.add(newBin);
+
+            // Apply the replacements
+            bin.getItems().removeAll(itemsToRemove);
+            bin.getItems().addAll(itemsToAdd);
+
+            // Check and handle any discrepancies
+            if (!itemsCorrectlyReplaced(itemsToRemove, itemsToAdd)) {
+                throw new IllegalStateException("Error in bin optimization: Item replacement mismatch.");
             }
         }
     }
 
+    // Function to find the best replacement for an item considering all available items
+    private static Item findBestReplacement(Item original, int remainingSlack, List<Item> candidateItems) {
+        Item bestFit = null;
+        int minSlack = Integer.MAX_VALUE;
 
+        for (Item candidate : candidateItems) {
+            if (candidate.getSize() > original.getSize() && candidate.getSize() <= remainingSlack) {
+                int slackDifference = remainingSlack - candidate.getSize();
+                if (slackDifference < minSlack) {
+                    minSlack = slackDifference;
+                    bestFit = candidate;
+                }
+            }
+        }
 
+        return bestFit;
+    }
+
+    // Function to ensure that the replacement process is correct
+    private static boolean itemsCorrectlyReplaced(List<Item> removed, List<Item> added) {
+        if (removed.size() != added.size()) {
+            return false;
+        }
+
+        int removedWeight = removed.stream().mapToInt(Item::getSize).sum();
+        int addedWeight = added.stream().mapToInt(Item::getSize).sum();
+        return removedWeight <= addedWeight;
+    }
 
     private static Set<Item> extractItems(List<Bin> binsForMutation) {
         Set<Item> extractedItems = new HashSet<>();
@@ -386,7 +382,17 @@ public class BinPackingGA {
         public int getFitness() {
             // Fitness is the negative of the number of bins (we want to minimize the number of bins)
             return -bins.size();
+            //return calculateFitness();
         }
+
+        public double calculateFitness() {
+            double loadSumSquared = bins.stream()
+                    .mapToDouble(bin -> Math.pow((double)bin.getCurrentSize() / BIN_CAPACITY * 100, 2))
+                    .sum();
+            double loadSumNormalized = loadSumSquared / 10000;
+            return loadSumNormalized / bins.size();
+        }
+
 
         public List<Bin> getBins() {
             return bins;
@@ -412,6 +418,9 @@ public class BinPackingGA {
             System.out.println("Items loaded: " + items.size());
 
             List<Individual> population = generateInitialPopulation(items, BIN_CAPACITY, POPULATION_SIZE);
+            for (Individual individual : population) {
+                optimizeBinFilling(individual.getBins(), allItems);
+            }
             System.out.println("Initial population generated");
             validateAndLogBinWeights(population, allItems, "Initial Population Generation");
 
@@ -420,7 +429,18 @@ public class BinPackingGA {
                 selectionUsingMGG(population, OFFSPRING_SIZE, BIN_CAPACITY);
                 currentGeneration = i;
 
-                    // Track and log metrics after selection
+//                for (int i = 0; i < GENERATIONS; i++) {
+//                    selectionUsingMGG(population, OFFSPRING_SIZE, BIN_CAPACITY);
+//                    if (i % 100 == 0) {  // Periodically optimize the entire population
+//                        for (Individual individual : population) {
+//                            optimizeBinFilling(individual.getBins());
+//                        }
+//                        System.out.println("Performed optimization at generation " + i);
+//                    }
+//                }
+
+
+                // Track and log metrics after selection
                 double avgFill = averageFillPercentage(population, BIN_CAPACITY);
                 int diversity = calculateDiversity(population);
                 int bestFitness = findBestSolution(population).getFitness();
