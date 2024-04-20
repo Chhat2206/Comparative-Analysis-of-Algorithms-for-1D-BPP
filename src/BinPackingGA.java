@@ -10,7 +10,7 @@ public class BinPackingGA {
     private static final Random random = new Random();
     private static final int BIN_CAPACITY = 10000;
 
-    private static final int OFFSPRING_SIZE = 500;
+    private static final int OFFSPRING_SIZE = 250;
     // A larger population size allows for more exploration but also increases computational complexity. 500 individuals is a reasonable size for many problems
 
     private static final double MUTATION_RATE = 0.01;
@@ -291,7 +291,6 @@ public class BinPackingGA {
         // Reintegrate extracted items using a heuristic
         reintegrateItemsUsingHeuristic(individual, extractedItems, binCapacity);
     }
-
 
     private static void reintegrateItemsUsingHeuristic(Individual individual, Set<Item> items, int binCapacity) {
         // Using Modified Best-Fit Slack (MBS) heuristic
