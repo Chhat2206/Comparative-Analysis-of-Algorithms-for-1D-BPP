@@ -40,20 +40,56 @@ public class AntColonyOptimization {
 
 
     public void initialize() {
-        // Recalculate positional weights to include item size and number of successors
-        double[] positionalWeights = calculatePositionalWeights();
-
-        // Initialize pheromones and heuristic matrix
+        // Initialize pheromones and heuristic matrix with initial values
         for (int i = 0; i < numItems; i++) {
             for (int j = 0; j < numItems; j++) {
-                // Assume influence reduces as distance increases between positions
                 double distanceFactor = 1.0 / (1.0 + Math.abs(i - j));
                 pheromones[i][j] = 1.0 / (numItems * binCapacity) * distanceFactor;
-                heuristic[i][j] = (1.0 / (itemSizes[i] + 1)) * positionalWeights[i];
+                heuristic[i][j] = 1.0; // Initialize with neutral values, will be dynamically updated
             }
         }
     }
 
+    private double calculateDynamicHeuristic(int item, int bin, int[] solution) {
+        int currentLoad = getCurrentLoad(bin, solution);
+        int remainingCapacity = binCapacity - currentLoad;
+
+        // Calculate the heuristic based on the space utilization efficiency
+        double spaceEfficiency = (double) itemSizes[item] / remainingCapacity;
+        double penaltyForExcessSpace = remainingCapacity < itemSizes[item] ? 0.5 : 1.0; // Penalize if item does not fit perfectly
+
+        // Combine space efficiency with the count of successors for dynamism
+        double positionalWeight = calculatePositionalWeight(item);
+        return spaceEfficiency * penaltyForExcessSpace * positionalWeight;
+    }
+
+    private int getCurrentLoad(int bin, int[] solution) {
+        int load = 0;
+        for (int i = 0; i < solution.length; i++) {
+            if (solution[i] == bin) {
+                load += itemSizes[i];
+            }
+        }
+        return load;
+    }
+
+    private double calculatePositionalWeight(int item) {
+        int successors = 0;
+        for (int j = 0; j < numItems; j++) {
+            if (precedence[item][j]) {
+                successors++;
+            }
+        }
+        return 1.0 / (itemSizes[item] + 1) + successors * 0.1; // Incorporating the count of successors
+    }
+
+    private void updateHeuristicMatrix(int[] solution) {
+        for (int item = 0; item < numItems; item++) {
+            for (int bin = 0; bin < numItems; bin++) {
+                heuristic[item][bin] = calculateDynamicHeuristic(item, bin, solution);
+            }
+        }
+    }
 
     // Adjusted method to calculate positional weights based on successors and item size
     private double[] calculatePositionalWeights() {
@@ -152,11 +188,13 @@ public class AntColonyOptimization {
 
         while (!unassignedItems.isEmpty()) {
             int item = selectNextItem(solution, unassignedItems);
-            if (item == -1) break; // If no item can be legally placed, break the loop
-            int bin = findBin(solution, item);
-            if (bin != -1) { // Check if a valid bin was found
-                solution[item] = bin;
-                unassignedItems.remove(Integer.valueOf(item));
+            if (item == -1) break;
+            if (canPlaceItem(solution, item)) {  // Use canPlaceItem to check if item can be placed
+                int bin = findBin(solution, item);
+                if (bin != -1) {
+                    solution[item] = bin;
+                    unassignedItems.remove(Integer.valueOf(item));
+                }
             }
         }
         return solution;
