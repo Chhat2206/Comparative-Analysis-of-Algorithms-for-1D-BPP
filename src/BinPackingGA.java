@@ -1,8 +1,10 @@
 import java.io.*;
+import java.sql.SQLOutput;
 import java.util.*;
 import java.util.stream.Collectors;
 
 public class BinPackingGA {
+    int runs = 30; // Number of times to run the algorithm
     private static int currentGeneration = 0;
     // Constants
     private static final int POPULATION_SIZE = 100;
@@ -28,55 +30,19 @@ public class BinPackingGA {
     // Generate the initial population of solutions using both random shuffling and heuristic-based approaches
     public static List<Individual> generateInitialPopulation(List<Item> originalItems, int binCapacity, int populationSize) {
         List<Individual> population = new ArrayList<>();
-        int heuristicPopulation = populationSize / 3;  // Divide population into thirds
 
-        // First third: Random shuffling and First-Fit
-        for (int i = 0; i < heuristicPopulation; i++) {
+        // Random shuffling and First-Fit
+        for (int i = 0; i < populationSize; i++) {
             List<Item> shuffledItems = new ArrayList<>(originalItems);
             Collections.shuffle(shuffledItems, random);
+
+            // Sort items in non-increasing size order before FFD
+            Collections.sort(shuffledItems, Comparator.comparingInt(Item::getSize).reversed());
             population.add(new Individual(applyFirstFit(shuffledItems, binCapacity)));
-        }
-
-        // Second third: Heuristic approach using Modified Best-Fit Slack (MBS')
-        List<Item> sortedItemsDesc = new ArrayList<>(originalItems);
-        sortedItemsDesc.sort(Comparator.comparing(Item::getSize).reversed());
-        for (int i = heuristicPopulation; i < 2 * heuristicPopulation; i++) {
-            population.add(new Individual(applyModifiedBestFitSlack(sortedItemsDesc, binCapacity)));
-        }
-
-        // Final third: Heuristic approach using Minimum Bin Slack (MBS)
-        for (int i = 2 * heuristicPopulation; i < populationSize; i++) {
-            population.add(new Individual(applyMinimumBinSlack(sortedItemsDesc, binCapacity)));
         }
 
         return population;
     }
-
-    private static List<Bin> applyMinimumBinSlack(List<Item> items, int binCapacity) {
-        List<Bin> bins = new ArrayList<>();
-        for (Item item : items) {
-            Bin bestBin = null;
-            int minSlack = Integer.MAX_VALUE;
-
-            for (Bin bin : bins) {
-                int currentSlack = binCapacity - bin.getCurrentSize();
-                if (currentSlack >= item.getSize() && currentSlack - item.getSize() < minSlack) {
-                    bestBin = bin;
-                    minSlack = currentSlack - item.getSize();
-                }
-            }
-
-            if (bestBin != null) {
-                bestBin.addItem(item);
-            } else {
-                Bin newBin = new Bin();
-                newBin.addItem(item);
-                bins.add(newBin);
-            }
-        }
-        return bins;
-    }
-
 
     // This method implements the First-Fit algorithm, which is used to place items into bins. Here's the step-by-step process:
     // Initializes an empty list of bins.
@@ -97,32 +63,6 @@ public class BinPackingGA {
                 }
             }
             if (!placed) {
-                Bin newBin = new Bin();
-                newBin.addItem(item);
-                bins.add(newBin);
-            }
-        }
-        return bins;
-    }
-
-    // Modified Best-Fit Slack Heuristic
-    private static List<Bin> applyModifiedBestFitSlack(List<Item> items, int binCapacity) {
-        List<Bin> bins = new ArrayList<>();
-        for (Item item : items) {
-            Bin bestFitBin = null;
-            int minSlack = Integer.MAX_VALUE;
-
-            for (Bin bin : bins) {
-                int currentSlack = binCapacity - bin.getCurrentSize();
-                if (currentSlack >= item.getSize() && currentSlack - item.getSize() < minSlack) {
-                    bestFitBin = bin;
-                    minSlack = currentSlack - item.getSize();
-                }
-            }
-
-            if (bestFitBin != null) {
-                bestFitBin.addItem(item);
-            } else {
                 Bin newBin = new Bin();
                 newBin.addItem(item);
                 bins.add(newBin);
@@ -406,6 +346,7 @@ public class BinPackingGA {
         long startTime = System.currentTimeMillis();
         System.out.println("Program started");
 
+
         Map<String, List<Item>> testCases = loadItems("src/BPP.txt");
 
         for (Map.Entry<String, List<Item>> entry : testCases.entrySet()) {
@@ -451,6 +392,11 @@ public class BinPackingGA {
                 if (bestFitness == -((totalItemWeight / BIN_CAPACITY)+1)) {
                     System.out.println("Stopping criteria met. Fitness equals the minimum possible number of bins.");
                     break; // Exit the loop if the stopping criteria is met
+                }
+
+                if (diversity >= 100) {
+                    System.out.println("Diversity reached 100, Stopping code");
+                    break;
                 }
 
                 // Apply mutation to a portion of the population

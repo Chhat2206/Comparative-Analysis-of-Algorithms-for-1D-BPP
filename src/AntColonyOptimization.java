@@ -5,22 +5,22 @@ import java.util.stream.IntStream;
 
 public class AntColonyOptimization {
     private static final int MAX_ITERATIONS = 20;
-    private static final int NUMBER_OF_ANTS = 5;
-    private double ALPHA = 1.0;
-    private double BETA = 2.0;
-    private double DECAY_LOCAL = 0.1;
-    private double DECAY_GLOBAL = 0.1;
+    private static final int NUMBER_OF_ANTS = 10;
+    private double ALPHA = 1.0; // Influence of pheromone
+    private double BETA = 2.0; // Influence of heuristic information
+    private double q0 = 0.9; // Probability of exploiting the best option
+    private double[][] pheromones; // Pheromones matrix
+    private double[][] heuristic; // Heuristic matrix (could be inverse of the item size, number of successors, etc.)
+    private Random random = new Random();
     private int iterationsWithoutImprovement = 0;
     private int numItems;
     private int binCapacity;
     private int[] itemSizes;
-    private double[][] pheromones;
-    private double[][] heuristic;
-    private Random random = new Random();
+
     private int[] bestSolution;
     private int bestBinCount = Integer.MAX_VALUE;
     private boolean[][] precedence;
-
+    private int[] numberOfSuccessors;
 
     public AntColonyOptimization(int numItems, int binCapacity, int[] itemSizes, boolean[][] precedence) {
         this.numItems = numItems;
@@ -29,7 +29,8 @@ public class AntColonyOptimization {
         this.pheromones = new double[numItems][numItems];
         this.heuristic = new double[numItems][numItems];
         this.precedence = precedence != null ? precedence : new boolean[numItems][numItems]; // Safely initialize
-        initialize();
+        initializePheromones();
+        initializeHeuristic();
     }
 
     // Alternative constructor if precedence data isn't initially available
@@ -37,134 +38,41 @@ public class AntColonyOptimization {
         this(numItems, binCapacity, itemSizes, null); // Call the main constructor with null precedence
     }
 
-
-
-    public void initialize() {
-        // Initialize pheromones and heuristic matrix with initial values
+    // Sets the initial values for the pheromones, which represents the attractiveness of placing items next to each other.
+    // Initially, value is determined based on the estimated optimal solution & scaling factor.
+    private void initializePheromones() {
+        double mStar = estimateOfOptimalSolution();
+        double scaleFactor = 0.01; // Adjust this factor based on empirical testing
+        double initialPheromoneValue = scaleFactor / (numItems * mStar);
         for (int i = 0; i < numItems; i++) {
             for (int j = 0; j < numItems; j++) {
-                double distanceFactor = 1.0 / (1.0 + Math.abs(i - j));
-                pheromones[i][j] = 1.0 / (numItems * binCapacity) * distanceFactor;
-                heuristic[i][j] = 1.0; // Initialize with neutral values, will be dynamically updated
+                pheromones[i][j] = initialPheromoneValue;
             }
         }
+        System.out.println("Initialization complete: Pheromones are set with initial value: " + initialPheromoneValue);
     }
 
-    private double calculateDynamicHeuristic(int item, int bin, int[] solution) {
-        int currentLoad = getCurrentLoad(bin, solution);
-        int remainingCapacity = binCapacity - currentLoad;
-
-        // Calculate the heuristic based on the space utilization efficiency
-        double spaceEfficiency = (double) itemSizes[item] / remainingCapacity;
-        double penaltyForExcessSpace = remainingCapacity < itemSizes[item] ? 0.5 : 1.0; // Penalize if item does not fit perfectly
-
-        // Combine space efficiency with the count of successors for dynamism
-        double positionalWeight = calculatePositionalWeight(item);
-        return spaceEfficiency * penaltyForExcessSpace * positionalWeight;
-    }
-
-    private int getCurrentLoad(int bin, int[] solution) {
-        int load = 0;
-        for (int i = 0; i < solution.length; i++) {
-            if (solution[i] == bin) {
-                load += itemSizes[i];
+    // Calculates pheromone values by placing an item relative to other items, influcing the probability of selecting placements during solution construction.
+    private double[] calculatePheromoneSummations(int item) {
+        double[] pheromoneSums = new double[numItems]; // Assuming numItems refers to potential bin positions as well.
+        for (int bin = 0; bin < numItems; bin++) {
+            double sum = 0.0;
+            for (int prevBin = 0; prevBin <= bin; prevBin++) {
+                sum += pheromones[item][prevBin];
             }
+            pheromoneSums[bin] = sum;
         }
-        return load;
+        return pheromoneSums;
     }
 
-    private double calculatePositionalWeight(int item) {
-        int successors = 0;
-        for (int j = 0; j < numItems; j++) {
-            if (precedence[item][j]) {
-                successors++;
-            }
-        }
-        return 1.0 / (itemSizes[item] + 1) + successors * 0.1; // Incorporating the count of successors
-    }
-
-    private void updateHeuristicMatrix(int[] solution) {
-        for (int item = 0; item < numItems; item++) {
-            for (int bin = 0; bin < numItems; bin++) {
-                heuristic[item][bin] = calculateDynamicHeuristic(item, bin, solution);
-            }
-        }
-    }
-
-    // Adjusted method to calculate positional weights based on successors and item size
-    private double[] calculatePositionalWeights() {
-        double[] weights = new double[numItems];
-        for (int i = 0; i < numItems; i++) {
-            int successors = 0;
-            // Count the number of successors for each item
-            for (int j = 0; j < numItems; j++) {
-                if (precedence[i][j]) {
-                    successors++;
-                }
-            }
-            // Calculate weight considering both the item size and its successors
-            // Example: smaller items with more successors should have higher weight
-            weights[i] = 1.0 / (itemSizes[i] + 1) + successors * 0.1; // Smaller size and more successors increase the weight
-        }
-        return weights;
-    }
-
-    private void updatePheromones(int[] solution, int binCount, boolean isGlobal) {
-        // Adjust ACO parameters dynamically based on the current search state
-        adjustParameters();
-
-        // Apply the local pheromone update rule first to all paths
-        for (int i = 0; i < numItems; i++) {
-            for (int j = 0; j < numItems; j++) {
-                // Local pheromone decay on all paths, slightly reducing pheromone concentration
-                pheromones[i][j] *= (1 - DECAY_LOCAL);
-            }
-        }
-
-        // Check if this update should apply the global update rules
-        if (isGlobal) {
-            // Apply global pheromone update only on the paths used in the best solution found
-            for (int i = 0; i < numItems; i++) {
-                int assignedBin = solution[i];
-                if (assignedBin != -1) {
-                    // Increase pheromone level significantly on the path used in the best solution
-                    pheromones[i][assignedBin] += 1.0 / binCount;  // Increase proportional to solution quality
-                }
-            }
-        }
-    }
-
-    private void adjustParameters() {
-        if (iterationsWithoutImprovement > 5) {
-            ALPHA += 0.1;
-            BETA -= 0.1;
-            if (ALPHA > 2.0) ALPHA = 2.0;  // Cap ALPHA to prevent it from becoming too influential
-            if (BETA < 0.5) BETA = 0.5;  // Ensure BETA does not become too insignificant
-        }
-
-        if (iterationsWithoutImprovement > 10) {
-            DECAY_LOCAL += 0.01;
-            DECAY_GLOBAL += 0.01;
-            if (DECAY_LOCAL > 0.2) DECAY_LOCAL = 0.2;  // Cap local decay to prevent too slow evaporation
-            if (DECAY_GLOBAL > 0.2) DECAY_GLOBAL = 0.2;  // Cap global decay similarly
-        } else if (iterationsWithoutImprovement == 0) {
-            // Reset parameters to initial values if a new best solution was found
-            ALPHA = 1.0;
-            BETA = 2.0;
-            DECAY_LOCAL = 0.1;
-            DECAY_GLOBAL = 0.1;
-        }
-    }
-
+    // Simulated ant constructing a solution and evaluating it. If the ant finds a better solution, it updates it.
     public int[] solve() {
         for (int iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
             boolean improved = false;
             List<int[]> solutions = new ArrayList<>();
             for (int ant = 0; ant < NUMBER_OF_ANTS; ant++) {
                 int[] solution = constructSolution();
-                solutions.add(solution);
                 int binCount = evaluateSolution(solution);
-
                 if (binCount < bestBinCount) {
                     bestBinCount = binCount;
                     bestSolution = solution.clone();
@@ -172,15 +80,17 @@ public class AntColonyOptimization {
                 }
             }
             if (!improved) {
-                iterationsWithoutImprovement++;
+                iterationsWithoutImprovement = 0;
+                updateGlobalPheromone(bestSolution);
             } else {
-                iterationsWithoutImprovement = 0;  // Reset on improvement
+                iterationsWithoutImprovement++;
             }
-            updatePheromones(bestSolution, bestBinCount, true);
         }
         return bestSolution;
     }
 
+    // Constructs the solution for one ant. Repeated selects the next best item to place based on pheronome levels, heuristic values, and item precedence, ensuring
+    // items are placed in feasable bins according to capacity
     private int[] constructSolution() {
         int[] solution = new int[numItems];
         Arrays.fill(solution, -1);
@@ -188,42 +98,42 @@ public class AntColonyOptimization {
 
         while (!unassignedItems.isEmpty()) {
             int item = selectNextItem(solution, unassignedItems);
-            if (item == -1) break;
-            if (canPlaceItem(solution, item)) {  // Use canPlaceItem to check if item can be placed
-                int bin = findBin(solution, item);
-                if (bin != -1) {
-                    solution[item] = bin;
-                    unassignedItems.remove(Integer.valueOf(item));
-                }
+            if (item == -1) break; // No valid item could be placed, exit loop
+            int bin = findBin(solution, item); // Method to find a suitable bin
+            if (bin != -1) {
+                solution[item] = bin;
+                updateLocalPheromone(item, bin);  // Update local pheromone after placing item
+                unassignedItems.remove(Integer.valueOf(item));
             }
         }
         return solution;
     }
 
-    private boolean canPlaceItem(int[] solution, int item) {
-        return allPredecessorsPlaced(solution, item);
+    private void updateLocalPheromone(int i, int j) {
+        double rho1 = 0.1; // Local evaporation rate
+        double tau0 = 1.0 / (numItems * estimateOfOptimalSolution()); // Initial pheromone level
+        pheromones[i][j] = (1 - rho1) * pheromones[i][j] + rho1 * tau0;
     }
 
-    private boolean allPredecessorsPlaced(int[] solution, int item) {
+    private void updateGlobalPheromone(int[] bestSolution) {
+        double rho2 = 0.1; // Global evaporation rate
         for (int i = 0; i < numItems; i++) {
-            if (precedence[i][item] && solution[i] == -1) {
-                return false; // Predecessor `i` is not placed yet
+            int j = bestSolution[i]; // assuming bestSolution[i] gives the bin in which item i is placed
+            if (j != -1) { // Check if the item was placed
+                double deltaTau = 1.0 / bestBinCount; // Example of setting Δτ_ij
+                pheromones[i][j] = (1 - rho2) * pheromones[i][j] + rho2 * deltaTau;
             }
         }
-        return true; // All predecessors are placed
     }
 
-    private int findBin(int[] solution, int item) {
-        for (int bin = 0; bin < numItems; bin++) {
-            if (canPlaceItemInBin(solution, bin, item)) {
-                return bin;
-            }
-        }
-        return -1; // Return -1 if no valid bin is found
+    private double estimateOfOptimalSolution() {
+        int totalSize = Arrays.stream(itemSizes).sum();
+        return Math.ceil((double) totalSize / binCapacity);
     }
 
+    // Selects the next item to place in the bin packing sequence based on the calculated probability or both
+    // phereomone and heuristic values, by applying a roulette wheel selection mechanism
     private int selectNextItem(int[] solution, List<Integer> unassignedItems) {
-        // First, filter out items that cannot yet be placed because their predecessors have not all been placed
         List<Integer> eligibleItems = unassignedItems.stream()
                 .filter(item -> allPredecessorsPlaced(solution, item))
                 .collect(Collectors.toList());
@@ -232,20 +142,19 @@ public class AntColonyOptimization {
             return -1; // No items can be legally placed
         }
 
-        // Calculate the probability for each eligible item
+        // Adjust pheromone contribution by summation rule
+        Map<Integer, Double> pheromoneContributions = new HashMap<>();
+        for (int item : eligibleItems) {
+            pheromoneContributions.put(item, calculatePheromoneSummations(item)[item]); // Use summation rule here
+        }
+
+        // Calculate probabilities incorporating summation rule
         double[] probabilities = new double[numItems];
         double totalProbability = 0.0;
 
         for (int item : eligibleItems) {
-            double pheromoneContribution = 0.0;
-            double heuristicContribution = heuristic[item][item]; // Assuming heuristic is pre-calculated for simplicity
-
-            // Calculate the sum of pheromones to this item from all possible 'from' positions (considering an aggregated influence)
-            for (int j = 0; j < numItems; j++) {
-                if (solution[j] != -1) { // Only consider placed items
-                    pheromoneContribution += Math.pow(pheromones[j][item], ALPHA);
-                }
-            }
+            double pheromoneContribution = pheromoneContributions.get(item);
+            double heuristicContribution = heuristic[item][item]; // Using heuristic value for simplicity
 
             probabilities[item] = Math.pow(pheromoneContribution, ALPHA) * Math.pow(heuristicContribution, BETA);
             totalProbability += probabilities[item];
@@ -258,13 +167,68 @@ public class AntColonyOptimization {
         for (int item : eligibleItems) {
             cumulativeProbability += probabilities[item];
             if (cumulativeProbability >= randomThreshold) {
+//                System.out.println("Selecting next item: Current probabilities - " + Arrays.toString(probabilities));
                 return item;
             }
         }
 
-        return -1; // Should not happen, but a fallback in case of rounding errors
+        return -1; // Fallback in case of rounding errors
     }
 
+
+
+
+    // Checks if an item can be placed in any bin based on precedence constraints
+    private boolean canPlaceItem(int[] solution, int item) {
+        return allPredecessorsPlaced(solution, item);
+    }
+
+    // Checks if predessors of a given item has been placed
+    private boolean allPredecessorsPlaced(int[] solution, int item) {
+        for (int i = 0; i < numItems; i++) {
+            if (precedence[i][item] && solution[i] == -1) {
+                return false; // Predecessor `i` is not placed yet
+            }
+        }
+        return true; // All predecessors are placed
+    }
+
+    // Checks if item can be placed to make sure its not over 10k
+    private int findBin(int[] solution, int item) {
+        for (int bin = 0; bin < numItems; bin++) {
+            if (canPlaceItemInBin(solution, bin, item)) {
+                return bin;
+            }
+        }
+        return -1; // Return -1 if no valid bin is found
+    }
+
+    private void calculateNumberOfSuccessors() {
+        numberOfSuccessors = new int[numItems];
+        for (int i = 0; i < numItems; i++) {
+            for (int j = 0; j < numItems; j++) {
+                if (precedence[i][j]) {  // If item i must precede item j
+                    numberOfSuccessors[i]++;
+                }
+            }
+        }
+    }
+
+    // Heuristic initialized based on item size and number of successors, influencing the decision making process
+    // by giving priority by placing items with fewer or smaller successors earlier
+    private void initializeHeuristic() {
+        calculateNumberOfSuccessors();
+
+        heuristic = new double[numItems][numItems];
+        for (int i = 0; i < numItems; i++) {
+            for (int j = 0; j < numItems; j++) {
+                if (i== j) {
+                    heuristic[i][j] = 1.0 / (itemSizes[i] + numberOfSuccessors[i] * 0.1);
+                }
+            }
+        }
+        System.out.println("Heuristic initialized based on item sizes and number of successors.");
+    }
 
     private boolean canPlaceItemInBin(int[] solution, int bin, int item) {
         int currentLoad = 0;
@@ -279,8 +243,6 @@ public class AntColonyOptimization {
     private int evaluateSolution(int[] solution) {
         return (int) Arrays.stream(solution).distinct().count();
     }
-
-
 
     public static void main(String[] args) throws FileNotFoundException {
         String fileName = "src/BPP.txt";
@@ -318,7 +280,6 @@ public class AntColonyOptimization {
             System.out.println("Total weight of all items in '" + testName + "': " + Arrays.stream(aco.itemSizes).sum());
             System.out.println("Execution Time: " + (endTime - startTime) / 1000.0 + " seconds");
         }
-
         scanner.close();
     }
 
