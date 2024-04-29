@@ -6,8 +6,11 @@ import java.util.stream.IntStream;
 public class AntColonyOptimization {
     private static final int MAX_ITERATIONS = 20;
     private static final int NUMBER_OF_ANTS = 10;
+    // Paper: 1
     private double ALPHA = 1.0; // Influence of pheromone
+    // Paper: 2
     private double BETA = 2.0; // Influence of heuristic information
+    // Paper 0.9
     private double q0 = 0.9; // Probability of exploiting the best option
     private double[][] pheromones; // Pheromones matrix
     private double[][] heuristic; // Heuristic matrix (could be inverse of the item size, number of successors, etc.)
@@ -52,24 +55,10 @@ public class AntColonyOptimization {
         System.out.println("Initialization complete: Pheromones are set with initial value: " + initialPheromoneValue);
     }
 
-    // Calculates pheromone values by placing an item relative to other items, influcing the probability of selecting placements during solution construction.
-    private double[] calculatePheromoneSummations(int item) {
-        double[] pheromoneSums = new double[numItems]; // Assuming numItems refers to potential bin positions as well.
-        for (int bin = 0; bin < numItems; bin++) {
-            double sum = 0.0;
-            for (int prevBin = 0; prevBin <= bin; prevBin++) {
-                sum += pheromones[item][prevBin];
-            }
-            pheromoneSums[bin] = sum;
-        }
-        return pheromoneSums;
-    }
-
     // Simulated ant constructing a solution and evaluating it. If the ant finds a better solution, it updates it.
     public int[] solve() {
         for (int iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
             boolean improved = false;
-            List<int[]> solutions = new ArrayList<>();
             for (int ant = 0; ant < NUMBER_OF_ANTS; ant++) {
                 int[] solution = constructSolution();
                 int binCount = evaluateSolution(solution);
@@ -96,8 +85,9 @@ public class AntColonyOptimization {
         Arrays.fill(solution, -1);
         List<Integer> unassignedItems = IntStream.range(0, numItems).boxed().collect(Collectors.toList());
 
+        int currentBin = 0;
         while (!unassignedItems.isEmpty()) {
-            int item = selectNextItem(solution, unassignedItems);
+            int item = selectNextItem(solution, unassignedItems, currentBin);
             if (item == -1) break; // No valid item could be placed, exit loop
             int bin = findBin(solution, item); // Method to find a suitable bin
             if (bin != -1) {
@@ -117,10 +107,11 @@ public class AntColonyOptimization {
 
     private void updateGlobalPheromone(int[] bestSolution) {
         double rho2 = 0.1; // Global evaporation rate
+        double deltaTau = 1.0 / bestBinCount; // Δτ, where bestBinCount is the cost or length of the global best tour
+
         for (int i = 0; i < numItems; i++) {
             int j = bestSolution[i]; // assuming bestSolution[i] gives the bin in which item i is placed
             if (j != -1) { // Check if the item was placed
-                double deltaTau = 1.0 / bestBinCount; // Example of setting Δτ_ij
                 pheromones[i][j] = (1 - rho2) * pheromones[i][j] + rho2 * deltaTau;
             }
         }
@@ -133,50 +124,67 @@ public class AntColonyOptimization {
 
     // Selects the next item to place in the bin packing sequence based on the calculated probability or both
     // phereomone and heuristic values, by applying a roulette wheel selection mechanism
-    private int selectNextItem(int[] solution, List<Integer> unassignedItems) {
+    private int selectNextItem(int[] solution, List<Integer> unassignedItems, int currentBin) {
+        // List to hold items that meet precedence constraints and are therefore eligible for selection.
         List<Integer> eligibleItems = unassignedItems.stream()
                 .filter(item -> allPredecessorsPlaced(solution, item))
                 .collect(Collectors.toList());
 
         if (eligibleItems.isEmpty()) {
-            return -1; // No items can be legally placed
+            return -1; // No eligible items left to place.
         }
 
-        // Adjust pheromone contribution by summation rule
-        Map<Integer, Double> pheromoneContributions = new HashMap<>();
-        for (int item : eligibleItems) {
-            pheromoneContributions.put(item, calculatePheromoneSummations(item)[item]); // Use summation rule here
-        }
-
-        // Calculate probabilities incorporating summation rule
-        double[] probabilities = new double[numItems];
+        // This map will store each item and its calculated probability score.
+        Map<Integer, Double> itemProbabilities = new HashMap<>();
         double totalProbability = 0.0;
 
-        for (int item : eligibleItems) {
-            double pheromoneContribution = pheromoneContributions.get(item);
-            double heuristicContribution = heuristic[item][item]; // Using heuristic value for simplicity
+        // Calculate the score for each eligible item.
+        for (Integer item : eligibleItems) {
+            double pheromoneSum = calculatePheromoneSumUpToBin(item, currentBin); // Sum of pheromones up to the current bin.
+            double heuristicValue = calculateHeuristicValue(item); // Calculate heuristic value based on the item and its successors.
 
-            probabilities[item] = Math.pow(pheromoneContribution, ALPHA) * Math.pow(heuristicContribution, BETA);
-            totalProbability += probabilities[item];
+            // Calculate probability using both pheromone and heuristic values.
+            double probability = Math.pow(pheromoneSum, ALPHA) * Math.pow(heuristicValue, BETA);
+            itemProbabilities.put(item, probability);
+            totalProbability += probability;
         }
 
-        // Select an item based on the calculated probabilities using a roulette wheel mechanism
-        double randomThreshold = random.nextDouble() * totalProbability;
-        double cumulativeProbability = 0.0;
+        // Check if we should exploit or explore based on the value of q0.
+        if (random.nextDouble() < q0) {
+            // Exploitation: choose the item with the highest probability.
+            return Collections.max(itemProbabilities.entrySet(), Comparator.comparingDouble(Map.Entry::getValue)).getKey();
+        } else {
+            // Exploration: choose an item based on a roulette wheel selection.
+            double randomThreshold = random.nextDouble() * totalProbability;
+            double cumulativeProbability = 0.0;
 
-        for (int item : eligibleItems) {
-            cumulativeProbability += probabilities[item];
-            if (cumulativeProbability >= randomThreshold) {
-//                System.out.println("Selecting next item: Current probabilities - " + Arrays.toString(probabilities));
-                return item;
+            for (Map.Entry<Integer, Double> entry : itemProbabilities.entrySet()) {
+                cumulativeProbability += entry.getValue();
+                if (cumulativeProbability >= randomThreshold) {
+                    return entry.getKey();
+                }
             }
         }
 
-        return -1; // Fallback in case of rounding errors
+        return -1; // Fallback in case something goes wrong, should not be reached.
     }
 
+    // Calculate the cumulative pheromone sum for an item up to the specified bin.
+    private double calculatePheromoneSumUpToBin(int item, int currentBin) {
+        double sum = 0.0;
+        for (int bin = 0; bin <= currentBin; bin++) {
+            sum += pheromones[item][bin];
+        }
+        return sum;
+    }
 
-
+    /**
+     * Calculate the heuristic value for an item, potentially considering its size, number of successors, or other factors.
+     */
+    private double calculateHeuristicValue(int item) {
+        // Example: Use item size inversely and number of successors; adjust formula as needed based on specific problem requirements.
+        return 1.0 / (itemSizes[item] + numberOfSuccessors[item] * 0.1);
+    }
 
     // Checks if an item can be placed in any bin based on precedence constraints
     private boolean canPlaceItem(int[] solution, int item) {
@@ -222,9 +230,7 @@ public class AntColonyOptimization {
         heuristic = new double[numItems][numItems];
         for (int i = 0; i < numItems; i++) {
             for (int j = 0; j < numItems; j++) {
-                if (i== j) {
                     heuristic[i][j] = 1.0 / (itemSizes[i] + numberOfSuccessors[i] * 0.1);
-                }
             }
         }
         System.out.println("Heuristic initialized based on item sizes and number of successors.");
