@@ -1,10 +1,8 @@
 import java.io.*;
-import java.sql.SQLOutput;
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class BinPackingGA {
-    int runs = 30; // Number of times to run the algorithm
+public class GeneticAlgorithm {
     private static int currentGeneration = 0;
     // Constants
     private static final int POPULATION_SIZE = 100;
@@ -331,8 +329,6 @@ public class BinPackingGA {
             double loadSumNormalized = loadSumSquared / 10000;
             return loadSumNormalized / bins.size();
         }
-
-
         public List<Bin> getBins() {
             return bins;
         }
@@ -345,8 +341,6 @@ public class BinPackingGA {
     public static void main(String[] args) throws FileNotFoundException {
         long startTime = System.currentTimeMillis();
         System.out.println("Program started");
-
-
         Map<String, List<Item>> testCases = loadItems("src/BPP.txt");
 
         for (Map.Entry<String, List<Item>> entry : testCases.entrySet()) {
@@ -369,23 +363,12 @@ public class BinPackingGA {
                 selectionUsingMGG(population, OFFSPRING_SIZE, BIN_CAPACITY);
                 currentGeneration = i;
 
-//                for (int i = 0; i < GENERATIONS; i++) {
-//                    selectionUsingMGG(population, OFFSPRING_SIZE, BIN_CAPACITY);
-//                    if (i % 100 == 0) {  // Periodically optimize the entire population
-//                        for (Individual individual : population) {
-//                            optimizeBinFilling(individual.getBins());
-//                        }
-//                        System.out.println("Performed optimization at generation " + i);
-//                    }
-//                }
-
-
                 // Track and log metrics after selection
                 double avgFill = averageFillPercentage(population, BIN_CAPACITY);
                 int diversity = calculateDiversity(population);
                 int bestFitness = findBestSolution(population).getFitness();
-
-                System.out.println("Generation " + currentGeneration + ": Avg Fill = " + avgFill + "%, Diversity = " + diversity + ", Best Fitness = " + bestFitness);
+//                 For tracking
+//                System.out.println("Generation " + currentGeneration + ": Avg Fill = " + avgFill + "%, Diversity = " + diversity + ", Best Fitness = " + bestFitness);
 
                 int totalItemWeight = totalItemWeight(allItems);
                 // Check if fitness equals the maximum possible number of bins
@@ -410,7 +393,7 @@ public class BinPackingGA {
                 // Generation-wise logging (keeping your existing logging)
                 if (i % 100 == 0) {
                     Individual bestIndividual = findBestSolution(population);
-                    System.out.println("Generation " + i + ", Best Fitness: " + bestIndividual.getFitness());
+//                    System.out.println("Generation " + i + ", Best Fitness: " + bestIndividual.getFitness());
                     validateAndLogBinWeights(population, allItems, "Mutation in Generation " + i);  // Validation after mutation
                 }
             }
@@ -425,6 +408,7 @@ public class BinPackingGA {
                 Bin bin = bestSolution.bins.get(i);
                 int binTotalWeight = bin.items.stream().mapToInt(item -> item.size).sum();
                 totalWeightInBins += binTotalWeight;
+                // For tracking
                 System.out.println("Bin " + (i + 1) + ": " + bin.items + " - Total weight: " + binTotalWeight + "/" + BIN_CAPACITY);
             }
 

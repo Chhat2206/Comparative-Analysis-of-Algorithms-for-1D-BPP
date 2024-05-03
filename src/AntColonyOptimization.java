@@ -110,7 +110,7 @@ public class AntColonyOptimization {
         double deltaTau = 1.0 / bestBinCount; // Δτ, where bestBinCount is the cost or length of the global best tour
 
         for (int i = 0; i < numItems; i++) {
-            int j = bestSolution[i]; // assuming bestSolution[i] gives the bin in which item i is placed
+            int j = bestSolution[i]; // bestSolution[i] gives the bin in which item i is placed
             if (j != -1) { // Check if the item was placed
                 pheromones[i][j] = (1 - rho2) * pheromones[i][j] + rho2 * deltaTau;
             }
