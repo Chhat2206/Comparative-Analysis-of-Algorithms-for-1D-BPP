@@ -1,65 +1,57 @@
-# Java Development Environment Setup Guide
+# One-Dimensional Bin Packing Algorithms
 
-This guide will help you set up your Java development environment using IntelliJ IDEA and the current version of the JDK and run "COMP2024-CW-Group18" project.
+This repository contains the implementation of various algorithms designed to tackle the One-Dimensional Bin Packing Problem (1DBPP). The primary goal is to fit items of varying sizes into the minimal number of bins. The algorithms included are:
 
-## Prerequisites
+1. Genetic Algorithm (GA)
+2. Ant Colony Optimization (ACO)
+3. Cuckoo Search Genetic Algorithm (CSGA)
+4. Hybrid Firefly Algorithm (HFA)
 
-Before you begin, ensure that you have administrative access to your computer and an active internet connection to download the necessary software.
+## Overview
 
-## 1. Install the Java Development Kit (JDK)
+### One-Dimensional Bin Packing Problem
 
-### Download JDK
+The Bin Packing Problem (BPP) is a classic combinatorial optimization problem categorized under the NP-hard complexity class. It involves packing a set of items of different sizes into a finite number of bins of fixed capacity, aiming to minimize the number of bins used.
 
-- Visit the [Oracle JDK Downloads page](https://www.oracle.com/java/technologies/javase-downloads.html).
-- Select the current version of the JDK for your operating system (Windows, macOS, Linux).
-- Download the installer file.
+### Algorithms
 
-### Install JDK
+#### Genetic Algorithm (GA)
+A population-based metaheuristic that simulates the process of natural evolution. It uses selection, crossover, and mutation to generate solutions that converge towards an optimal or near-optimal solution over successive generations.
 
-- Run the downloaded installer.
-- Follow the installation prompts. Make a note of the JDK installation path, as you may need it later for configuration purposes.
+#### Ant Colony Optimization (ACO)
+Inspired by the foraging behavior of real ants, ACO uses a metaheuristic approach to solve complex optimization problems by mimicking how ants find the shortest path between food sources and their colony.
 
-### Set Environment Variables (Windows)
+#### Cuckoo Search Genetic Algorithm (CSGA)
+Combines elements of cuckoo search and genetic algorithms to optimize solutions. This hybrid approach leverages the strengths of both metaheuristics to enhance efficiency and convergence.
 
-- Right-click on 'This PC' and select 'Properties'.
-- Click on 'Advanced system settings' and then 'Environment Variables'.
-- Under 'System Variables', find and select 'Path', then click 'Edit'.
-- Add the path to the `bin` directory of your JDK installation (e.g., `C:\Program Files\Java\jdk-current\bin`).
-- Create a new system variable:
-    - Name: `JAVA_HOME`
-    - Value: the path to your JDK installation (e.g., `C:\Program Files\Java\jdk-current`).
-- Click 'OK' to close all dialogues.
+#### Hybrid Firefly Algorithm (HFA)
+Incorporates mutation mechanisms to enhance population diversity and prevent stagnation. Fireflies move towards brighter (better) solutions, guided by an attractiveness factor.
 
-## 2. Install IntelliJ IDEA
+## Files
 
-### Download IntelliJ IDEA
+- `HybridFireflyAlgorithm.java`: Implementation of the Hybrid Firefly Algorithm.
+- `GeneticAlgorithm.java`: Implementation of the Genetic Algorithm.
+- `AntColonyOptimization.java`: Implementation of the Ant Colony Optimization.
+- `CuckooSearchGeneticAlgorithm.java`: Implementation of the Cuckoo Search Genetic Algorithm.
+- `Bin.java`: Represents the bin structure used in the algorithms.
+- `Item.java`: Represents the item structure used in the algorithms.
 
-- Visit the [IntelliJ IDEA download page](https://www.jetbrains.com/idea/download/).
-- Choose the edition you wish to install (Community or Ultimate).
-- Download the installer for your operating system.
+## Installation
 
-### Install IntelliJ IDEA
+To use these algorithms, clone the repository and compile the Java files using your preferred Java IDE or command line.
 
-- Run the downloaded installer.
-- Follow the installation prompts, accepting the default settings or customizing them as needed.
+```bash
+git clone https://github.com/yourusername/OneDimensionalBinPacking.git
+cd OneDimensionalBinPacking 
+```
 
-## 3. Configure IntelliJ IDEA
+## Results
 
-- **Open IntelliJ IDEA.**
-    - When opening for the first time, you might be prompted to import settings. If you are a new user, select 'Do not import settings'.
-- **Configure JDK:**
-    - Go to `File` > `Project Structure` > `Project`.
-    - Click on 'New...' next to the 'Project SDK' field.
-    - Select 'JDK', then navigate to the directory where you installed the current version of the JDK (e.g., `C:\Program Files\Java\jdk-current`).
-    - Click 'OK' to set the JDK for your projects.
+The algorithms are evaluated based on their solution optimality, computational efficiency, and convergence traits. The repository includes test cases and benchmarks to demonstrate the performance of each algorithm.
 
-## 4. Open Your Project Folder
+## Contributing
 
-- To open the project named "COMP2024-CW-Group18":
-    - Navigate to `File` > `Open` in IntelliJ IDEA.
-    - Browse to the directory containing the "COMP2024-CW-Group18" project.
-    - Select the project directory and click 'OK'.
+Contributions are welcome! If you have improvements or additional algorithms to add, please fork the repository and submit a pull request.
 
-## Conclusion
+For a detailed review and analysis, refer to the included [Research Paper](Research%20Paper.pdf).
 
-You are now ready to run "COMP2024-CW-Group18" project.
